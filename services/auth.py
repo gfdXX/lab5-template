@@ -169,32 +169,21 @@ def get_validator() -> JwtValidator:
     return JwtValidator(get_settings())
 
 
-def get_current_user(
-    authorization: str = Header(None),
-    x_user_name: str = Header(None, alias="X-User-Name"),
-) -> AuthenticatedUser:
-    """
-    FastAPI dependency that validates JWT and returns an authenticated user.
-    Fallback: if no Authorization header but X-User-Name provided (legacy tests), accept it.
-    """
-    if authorization and authorization.lower().startswith("bearer "):
-        token = authorization.split(" ", 1)[1].strip()
-        return get_validator().validate(token)
+def get_current_user(authorization: str = Header(None)) -> AuthenticatedUser:
+    """FastAPI dependency that validates JWT and returns an authenticated user."""
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization header with Bearer token is required",
+        )
 
-    if x_user_name:
-        return AuthenticatedUser(username=x_user_name, token="", claims={"x-user-name": x_user_name})
-
-    raise HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Authorization header with Bearer token is required",
-    )
+    token = authorization.split(" ", 1)[1].strip()
+    return get_validator().validate(token)
 
 
 def auth_header_for(token: str) -> Dict[str, str]:
     """Build Authorization header for downstream requests."""
-    if token:
-        return {"Authorization": f"Bearer {token}"}
-    return {}
+    return {"Authorization": f"Bearer {token}"}
 
 
 def reset_auth_cache():

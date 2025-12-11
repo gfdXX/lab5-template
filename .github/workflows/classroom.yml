@@ -191,6 +191,14 @@ jobs:
           export KUBECONFIG=./kubeconfig
           kubectl rollout status deployment/gateway-service -n test --timeout=3m
 
+      - name: Wait for all services ready
+        run: |
+          export KUBECONFIG=./kubeconfig
+          kubectl rollout status deployment/cars-service -n test --timeout=5m
+          kubectl rollout status deployment/rental-service -n test --timeout=5m
+          kubectl rollout status deployment/payment-service -n test --timeout=5m
+          kubectl rollout status deployment/gateway-service -n test --timeout=5m
+
       - name: Inspect gateway deployment
         run: |
           export KUBECONFIG=./kubeconfig
@@ -286,3 +294,16 @@ jobs:
             cat port-forward.log
             rm -f port-forward.log
           fi
+
+      - name: Collect logs on failure
+        if: failure()
+        run: |
+          export KUBECONFIG=./kubeconfig
+          echo "Gateway logs:"
+          kubectl logs deployment/gateway-service -n test --tail=200 || true
+          echo "Rental logs:"
+          kubectl logs deployment/rental-service -n test --tail=200 || true
+          echo "Payment logs:"
+          kubectl logs deployment/payment-service -n test --tail=200 || true
+          echo "Cars logs:"
+          kubectl logs deployment/cars-service -n test --tail=200 || true

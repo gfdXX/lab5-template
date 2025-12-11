@@ -549,16 +549,16 @@ async def get_rental(rental_uid: str, user: AuthenticatedUser = Depends(get_curr
             )
             if payment_response.status_code == 200:
                 rental_data["payment"] = payment_response.json()
-                elif payment_response.status_code == 404:
-                    rental_data["payment"] = {}
+            elif payment_response.status_code == 404:
+                rental_data["payment"] = {}
+            else:
+                if rental_data.get("status") != "CANCELED":
+                    rental_data["payment"] = {"paymentUid": rental_data["paymentUid"], "status": "PAID"}
                 else:
-                    if rental_data.get("status") != "CANCELED":
-                        rental_data["payment"] = {"paymentUid": rental_data["paymentUid"], "status": "PAID"}
-                    else:
-                        rental_data["payment"] = {}
+                    rental_data["payment"] = {}
         except (requests.RequestException, requests.Timeout):
             if rental_data.get("status") != "CANCELED":
-                    rental_data["payment"] = {"paymentUid": rental_data["paymentUid"], "status": "PAID"}
+                rental_data["payment"] = {"paymentUid": rental_data["paymentUid"], "status": "PAID"}
             else:
                 rental_data["payment"] = {}
         

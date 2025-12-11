@@ -54,6 +54,7 @@ jobs:
           set -e
           export DOCKER_USERNAME=${{ secrets.DOCKER_USERNAME }}
           export DOCKER_IMAGE_BASE=$DOCKER_USERNAME/car-rental-service
+          export IMAGE_TAG=${GITHUB_SHA}
 
           # Derive a deterministic docker compose project name (lowercase, alphanumeric + dash)
           PROJECT_NAME=$(basename "$GITHUB_WORKSPACE")
@@ -72,19 +73,27 @@ jobs:
 
           # Tag and push cars-service
           docker tag "$CARS_IMAGE" "$DOCKER_IMAGE_BASE-cars:latest"
+          docker tag "$CARS_IMAGE" "$DOCKER_IMAGE_BASE-cars:$IMAGE_TAG"
           docker push "$DOCKER_IMAGE_BASE-cars:latest"
+          docker push "$DOCKER_IMAGE_BASE-cars:$IMAGE_TAG"
 
           # Tag and push rental-service
           docker tag "$RENTAL_IMAGE" "$DOCKER_IMAGE_BASE-rental:latest"
+          docker tag "$RENTAL_IMAGE" "$DOCKER_IMAGE_BASE-rental:$IMAGE_TAG"
           docker push "$DOCKER_IMAGE_BASE-rental:latest"
+          docker push "$DOCKER_IMAGE_BASE-rental:$IMAGE_TAG"
 
           # Tag and push payment-service
           docker tag "$PAYMENT_IMAGE" "$DOCKER_IMAGE_BASE-payment:latest"
+          docker tag "$PAYMENT_IMAGE" "$DOCKER_IMAGE_BASE-payment:$IMAGE_TAG"
           docker push "$DOCKER_IMAGE_BASE-payment:latest"
+          docker push "$DOCKER_IMAGE_BASE-payment:$IMAGE_TAG"
 
           # Tag and push gateway-service
           docker tag "$GATEWAY_IMAGE" "$DOCKER_IMAGE_BASE-gateway:latest"
+          docker tag "$GATEWAY_IMAGE" "$DOCKER_IMAGE_BASE-gateway:$IMAGE_TAG"
           docker push "$DOCKER_IMAGE_BASE-gateway:latest"
+          docker push "$DOCKER_IMAGE_BASE-gateway:$IMAGE_TAG"
 
   deploy:
     name: Deploy to Kubernetes
@@ -144,7 +153,7 @@ jobs:
             --namespace test \
             -f ./helm/values/cars-service.yaml \
             --set image.repository=${{ secrets.DOCKER_USERNAME }}/car-rental-service-cars \
-            --set image.tag=latest \
+            --set image.tag=${GITHUB_SHA} \
             --wait
 
       - name: Deploy Payment Service
@@ -154,7 +163,7 @@ jobs:
             --namespace test \
             -f ./helm/values/payment-service.yaml \
             --set image.repository=${{ secrets.DOCKER_USERNAME }}/car-rental-service-payment \
-            --set image.tag=latest \
+            --set image.tag=${GITHUB_SHA} \
             --wait
 
       - name: Deploy Rental Service
@@ -164,7 +173,7 @@ jobs:
             --namespace test \
             -f ./helm/values/rental-service.yaml \
             --set image.repository=${{ secrets.DOCKER_USERNAME }}/car-rental-service-rental \
-            --set image.tag=latest \
+            --set image.tag=${GITHUB_SHA} \
             --wait
 
       - name: Deploy Gateway Service
@@ -174,7 +183,7 @@ jobs:
             --namespace test \
             -f ./helm/values/gateway-service.yaml \
             --set image.repository=${{ secrets.DOCKER_USERNAME }}/car-rental-service-gateway \
-            --set image.tag=latest \
+            --set image.tag=${GITHUB_SHA} \
             --wait
 
       - name: Wait before services are ready
@@ -223,6 +232,14 @@ jobs:
             cat /tmp/gw_noauth_body
             exit 1
           fi
+
+      - name: Restart deployments to pull fresh images
+        run: |
+          export KUBECONFIG=./kubeconfig
+          kubectl rollout restart deployment/cars-service -n test || true
+          kubectl rollout restart deployment/rental-service -n test || true
+          kubectl rollout restart deployment/payment-service -n test || true
+          kubectl rollout restart deployment/gateway-service -n test || true
       - name: Clean previous rentals
         run: |
           set -e

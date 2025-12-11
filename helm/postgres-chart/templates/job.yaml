@@ -1,9 +1,12 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "postgres-chart.fullname" . }}-init
+  name: {{ include "postgres-chart.fullname" . }}-init-{{ .Release.Revision }}
   labels:
     {{- include "postgres-chart.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 spec:
   template:
     metadata:

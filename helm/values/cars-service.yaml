@@ -10,6 +10,22 @@ service:
 env:
   - name: DATABASE_URL
     value: "postgresql://program:test@postgres:5432/cars"
+  - name: OIDC_ISSUER
+    value: "https://dev-x72evwvlbitajlk0.us.auth0.com/"
+  - name: OIDC_AUDIENCE
+    value: "https://dev-x72evwvlbitajlk0.us.auth0.com/api/v2/"
+  - name: OIDC_CLIENT_ID
+    value: "pqn53cnXeQEFQW7xk5RHc0NsbRP6cEeQ"
+  - name: OIDC_CLIENT_SECRET
+    value: "KGMAve77s3mF2oT8XBznOMnUELvc23FNjT4iLk3N3JJzISLe85jq8R9iG9u84gBw"
+  - name: OIDC_TOKEN_URL
+    value: "https://dev-x72evwvlbitajlk0.us.auth0.com/oauth/token"
+  - name: OIDC_WELL_KNOWN_URL
+    value: "https://dev-x72evwvlbitajlk0.us.auth0.com/.well-known/openid-configuration"
+  - name: OIDC_JWKS_URL
+    value: "https://dev-x72evwvlbitajlk0.us.auth0.com/.well-known/jwks.json"
+  - name: OIDC_SCOPE
+    value: "openid profile email"
 
 command:
   - uvicorn

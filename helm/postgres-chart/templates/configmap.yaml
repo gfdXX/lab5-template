@@ -19,11 +19,22 @@ data:
 
     echo "PostgreSQL is ready, creating databases..."
 
-    # Create databases
+    # Create databases (idempotent)
     psql -v ON_ERROR_STOP=1 -h {{ include "postgres-chart.fullname" . }} -U {{ .Values.postgres.user }} -d {{ .Values.postgres.database }} <<-EOSQL
-        CREATE DATABASE cars;
-        CREATE DATABASE rentals;
-        CREATE DATABASE payments;
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'cars') THEN
+                CREATE DATABASE cars;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'rentals') THEN
+                CREATE DATABASE rentals;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'payments') THEN
+                CREATE DATABASE payments;
+            END IF;
+        END
+        $$;
+
         GRANT ALL PRIVILEGES ON DATABASE cars TO {{ .Values.postgres.user }};
         GRANT ALL PRIVILEGES ON DATABASE rentals TO {{ .Values.postgres.user }};
         GRANT ALL PRIVILEGES ON DATABASE payments TO {{ .Values.postgres.user }};
@@ -31,9 +42,9 @@ data:
 
     echo "Databases created successfully"
 
-    # Create cars schema and insert data
+    # Create cars schema and insert data (idempotent)
     psql -v ON_ERROR_STOP=1 -h {{ include "postgres-chart.fullname" . }} -U {{ .Values.postgres.user }} -d cars <<-EOSQL
-        CREATE TABLE cars
+        CREATE TABLE IF NOT EXISTS cars
         (
             id                  SERIAL PRIMARY KEY,
             car_uid             uuid UNIQUE NOT NULL,
@@ -53,14 +64,22 @@ data:
         INSERT INTO cars (car_uid, brand, model, registration_number, power, price, type, availability) VALUES
         ('109b42f3-198d-4c89-9276-a7520a7120ab', 'Mercedes Benz', 'GLA 250', 'ЛО777Х799', 249, 3500, 'SEDAN', true),
         ('209b42f3-198d-4c89-9276-a7520a7120ab', 'BMW', 'X5', 'А123БВ777', 300, 5000, 'SUV', true),
-        ('309b42f3-198d-4c89-9276-a7520a7120ab', 'Audi', 'A4', 'В456ГД777', 200, 4000, 'SEDAN', true);
+        ('309b42f3-198d-4c89-9276-a7520a7120ab', 'Audi', 'A4', 'В456ГД777', 200, 4000, 'SEDAN', true)
+        ON CONFLICT (car_uid) DO UPDATE SET
+            brand=EXCLUDED.brand,
+            model=EXCLUDED.model,
+            registration_number=EXCLUDED.registration_number,
+            power=EXCLUDED.power,
+            price=EXCLUDED.price,
+            type=EXCLUDED.type,
+            availability=EXCLUDED.availability;
     EOSQL
 
     echo "Cars schema and data created successfully"
 
-    # Create rentals schema
+    # Create rentals schema (idempotent)
     psql -v ON_ERROR_STOP=1 -h {{ include "postgres-chart.fullname" . }} -U {{ .Values.postgres.user }} -d rentals <<-EOSQL
-        CREATE TABLE rental
+        CREATE TABLE IF NOT EXISTS rental
         (
             id          SERIAL PRIMARY KEY,
             rental_uid  uuid UNIQUE NOT NULL,
@@ -78,9 +97,9 @@ data:
 
     echo "Rentals schema created successfully"
 
-    # Create payments schema
+    # Create payments schema (idempotent)
     psql -v ON_ERROR_STOP=1 -h {{ include "postgres-chart.fullname" . }} -U {{ .Values.postgres.user }} -d payments <<-EOSQL
-        CREATE TABLE payment
+        CREATE TABLE IF NOT EXISTS payment
         (
             id          SERIAL PRIMARY KEY,
             payment_uid uuid UNIQUE NOT NULL,

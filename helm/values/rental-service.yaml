@@ -27,6 +27,7 @@ env:
   - name: OIDC_SCOPE
     value: "openid profile email"
 
+
 command:
   - uvicorn
   - services.rental_service.main:app

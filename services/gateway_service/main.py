@@ -527,6 +527,19 @@ async def get_rentals(
                     item["payment"] = local_payment or {"paymentUid": item["paymentUid"], "status": "PAID", "price": 0}
                 else:
                     item["payment"] = {}
+
+            # Ensure payment object is always present with status/price
+            if not item.get("payment"):
+                item["payment"] = {"paymentUid": item.get("paymentUid"), "status": "PAID", "price": 0}
+            else:
+                if item["payment"].get("status") is None:
+                    item["payment"]["status"] = "PAID"
+                if item["payment"].get("price") is None:
+                    local_payment = get_payment_local(item.get("paymentUid"))
+                    if local_payment:
+                        item["payment"] = local_payment
+                    else:
+                        item["payment"]["price"] = 0
         
         return items
     except requests.RequestException:
@@ -589,6 +602,19 @@ async def get_rental(rental_uid: str, user: AuthenticatedUser = Depends(get_curr
                 rental_data["payment"] = local_payment or {"paymentUid": rental_data["paymentUid"], "status": "PAID", "price": 0}
             else:
                 rental_data["payment"] = {}
+
+        # Ensure payment object includes status and price
+        if not rental_data.get("payment"):
+            rental_data["payment"] = {"paymentUid": rental_data.get("paymentUid"), "status": "PAID", "price": 0}
+        else:
+            if rental_data["payment"].get("status") is None:
+                rental_data["payment"]["status"] = "PAID"
+            if rental_data["payment"].get("price") is None:
+                local_payment = get_payment_local(rental_data.get("paymentUid"))
+                if local_payment:
+                    rental_data["payment"] = local_payment
+                else:
+                    rental_data["payment"]["price"] = 0
         
         return rental_data
     except requests.RequestException:

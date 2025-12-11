@@ -20,20 +20,10 @@ data:
     echo "PostgreSQL is ready, creating databases..."
 
     # Create databases (idempotent)
-    psql -v ON_ERROR_STOP=1 -h {{ include "postgres-chart.fullname" . }} -U {{ .Values.postgres.user }} -d {{ .Values.postgres.database }} <<-EOSQL
-        DO $$
-        BEGIN
-            IF NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'cars') THEN
-                CREATE DATABASE cars;
-            END IF;
-            IF NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'rentals') THEN
-                CREATE DATABASE rentals;
-            END IF;
-            IF NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'payments') THEN
-                CREATE DATABASE payments;
-            END IF;
-        END
-        $$;
+    psql -v ON_ERROR_STOP=1 -h {{ include "postgres-chart.fullname" . }} -U {{ .Values.postgres.user }} -d {{ .Values.postgres.database }} <<-'EOSQL'
+        SELECT 'CREATE DATABASE cars' WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'cars')\gexec
+        SELECT 'CREATE DATABASE rentals' WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'rentals')\gexec
+        SELECT 'CREATE DATABASE payments' WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'payments')\gexec
 
         GRANT ALL PRIVILEGES ON DATABASE cars TO {{ .Values.postgres.user }};
         GRANT ALL PRIVILEGES ON DATABASE rentals TO {{ .Values.postgres.user }};
@@ -43,7 +33,7 @@ data:
     echo "Databases created successfully"
 
     # Create cars schema and insert data (idempotent)
-    psql -v ON_ERROR_STOP=1 -h {{ include "postgres-chart.fullname" . }} -U {{ .Values.postgres.user }} -d cars <<-EOSQL
+    psql -v ON_ERROR_STOP=1 -h {{ include "postgres-chart.fullname" . }} -U {{ .Values.postgres.user }} -d cars <<-'EOSQL'
         CREATE TABLE IF NOT EXISTS cars
         (
             id                  SERIAL PRIMARY KEY,
@@ -78,7 +68,7 @@ data:
     echo "Cars schema and data created successfully"
 
     # Create rentals schema (idempotent)
-    psql -v ON_ERROR_STOP=1 -h {{ include "postgres-chart.fullname" . }} -U {{ .Values.postgres.user }} -d rentals <<-EOSQL
+    psql -v ON_ERROR_STOP=1 -h {{ include "postgres-chart.fullname" . }} -U {{ .Values.postgres.user }} -d rentals <<-'EOSQL'
         CREATE TABLE IF NOT EXISTS rental
         (
             id          SERIAL PRIMARY KEY,
@@ -98,7 +88,7 @@ data:
     echo "Rentals schema created successfully"
 
     # Create payments schema (idempotent)
-    psql -v ON_ERROR_STOP=1 -h {{ include "postgres-chart.fullname" . }} -U {{ .Values.postgres.user }} -d payments <<-EOSQL
+    psql -v ON_ERROR_STOP=1 -h {{ include "postgres-chart.fullname" . }} -U {{ .Values.postgres.user }} -d payments <<-'EOSQL'
         CREATE TABLE IF NOT EXISTS payment
         (
             id          SERIAL PRIMARY KEY,

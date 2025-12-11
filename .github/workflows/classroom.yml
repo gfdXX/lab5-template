@@ -241,22 +241,41 @@ jobs:
             exit 1
           fi
 
-      - name: Restart deployments to pull fresh images
-        run: |
-          export KUBECONFIG=./kubeconfig
-          kubectl rollout restart deployment/cars-service -n test || true
-          kubectl rollout restart deployment/rental-service -n test || true
-          kubectl rollout restart deployment/payment-service -n test || true
-          kubectl rollout restart deployment/gateway-service -n test || true
-      - name: Clean previous rentals
+      - name: Clean previous rentals via gateway (auth)
         run: |
           set -e
+          AUTH_DOMAIN="dev-x72evwvlbitajlk0.us.auth0.com"
+          CLIENT_ID="pqn53cnXeQEFQW7xk5RHc0NsbRP6cEeQ"
+          CLIENT_SECRET="KGMAve77s3mF2oT8XBznOMnUELvc23FNjT4iLk3N3JJzISLe85jq8R9iG9u84gBw"
+          USERNAME="salgikda@gmail.com"
+          PASSWORD="6UwQQYX!djfqXSd"
+          AUDIENCE="https://dev-x72evwvlbitajlk0.us.auth0.com/api/v2/"
+
+          echo "Fetching access token for cleanup..."
+          TOKEN=$(curl -s -X POST "https://${AUTH_DOMAIN}/oauth/token" \
+            -H "content-type: application/json" \
+            -d "{
+              \"grant_type\": \"http://auth0.com/oauth/grant-type/password-realm\",
+              \"client_id\": \"${CLIENT_ID}\",
+              \"client_secret\": \"${CLIENT_SECRET}\",
+              \"username\": \"${USERNAME}\",
+              \"password\": \"${PASSWORD}\",
+              \"realm\": \"Username-Password-Authentication\",
+              \"audience\": \"${AUDIENCE}\",
+              \"scope\": \"openid profile email\"
+            }" | jq -r '.access_token')
+
+          if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+            echo "Failed to obtain access token for cleanup"
+            exit 1
+          fi
+
           CAR_UID="109b42f3-198d-4c89-9276-a7520a7120ab"
-          USERNAME="Test Max"
-          echo "Releasing car ${CAR_UID}"
-          curl -s -X PATCH "http://localhost:8070/api/v1/cars/${CAR_UID}/availability?available=true" > /dev/null || true
-          
-          rentals=$(curl -s -H "X-User-Name: ${USERNAME}" "http://localhost:8080/api/v1/rental" || echo "[]")
+          echo "Releasing car ${CAR_UID} via gateway"
+          curl -s -X PATCH "http://localhost:8080/api/v1/cars/${CAR_UID}/availability?available=true" \
+            -H "Authorization: Bearer ${TOKEN}" > /dev/null || true
+
+          rentals=$(curl -s -H "Authorization: Bearer ${TOKEN}" "http://localhost:8080/api/v1/rental" || echo "[]")
           if echo "${rentals}" | jq empty >/dev/null 2>&1; then
             ids=$(echo "${rentals}" | jq -r '
               def rentals_array:
@@ -269,8 +288,8 @@ jobs:
               | .[]?')
             if [ -n "${ids}" ]; then
               for id in $ids; do
-                echo "Cancelling leftover rental ${id}"
-                curl -s -o /dev/null -X DELETE -H "X-User-Name: ${USERNAME}" "http://localhost:8080/api/v1/rental/${id}" || true
+                echo "Cancelling leftover rental ${id} via gateway"
+                curl -s -o /dev/null -X DELETE -H "Authorization: Bearer ${TOKEN}" "http://localhost:8080/api/v1/rental/${id}" || true
               done
             else
               echo "No active rentals found"

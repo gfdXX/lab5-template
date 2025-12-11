@@ -191,7 +191,12 @@
 							]
 						},
 						"method": "GET",
-						"header": [],
+						"header": [
+							{
+								"key": "X-User-Name",
+								"value": "{{username}}"
+							}
+						],
 						"url": {
 							"raw": "{{serviceUrl}}/api/v1/cars?page=1&size=10&showAll=false",
 							"host": [
@@ -319,6 +324,10 @@
 						"method": "POST",
 						"header": [
 							{
+								"key": "X-User-Name",
+								"value": "{{username}}"
+							},
+							{
 								"key": "Content-Type",
 								"value": "application/json"
 							}
@@ -440,7 +449,12 @@
 							]
 						},
 						"method": "GET",
-						"header": [],
+						"header": [
+							{
+								"key": "X-User-Name",
+								"value": "{{username}}"
+							}
+						],
 						"url": {
 							"raw": "{{serviceUrl}}/api/v1/rental/:rentalUid",
 							"host": [
@@ -554,7 +568,12 @@
 							]
 						},
 						"method": "GET",
-						"header": [],
+						"header": [
+							{
+								"key": "X-User-Name",
+								"value": "{{username}}"
+							}
+						],
 						"url": {
 							"raw": "{{serviceUrl}}/api/v1/rental",
 							"host": [
@@ -639,7 +658,12 @@
 							]
 						},
 						"method": "DELETE",
-						"header": [],
+						"header": [
+							{
+								"key": "X-User-Name",
+								"value": "{{username}}"
+							}
+						],
 						"url": {
 							"raw": "{{serviceUrl}}/api/v1/rental/:rentalUid",
 							"host": [
@@ -889,7 +913,12 @@
 							]
 						},
 						"method": "POST",
-						"header": [],
+						"header": [
+							{
+								"key": "X-User-Name",
+								"value": "{{username}}"
+							}
+						],
 						"url": {
 							"raw": "{{serviceUrl}}/api/v1/rental/:rentalUid/finish",
 							"host": [

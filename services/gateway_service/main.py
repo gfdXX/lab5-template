@@ -512,28 +512,19 @@ async def get_rentals(
                 elif payment_response.status_code == 404:
                     if item.get("status") != "CANCELED":
                         local_payment = get_payment_local(item["paymentUid"])
-                        if local_payment:
-                            item["payment"] = local_payment
-                        else:
-                            item["payment"] = {"paymentUid": item["paymentUid"], "status": "PAID"}
+                        item["payment"] = local_payment or {"paymentUid": item["paymentUid"], "status": "PAID", "price": 0}
                     else:
                         item["payment"] = {}
                 else:
                     if item.get("status") != "CANCELED":
                         local_payment = get_payment_local(item["paymentUid"])
-                        if local_payment:
-                            item["payment"] = local_payment
-                        else:
-                            item["payment"] = {"paymentUid": item["paymentUid"], "status": "PAID"}
+                        item["payment"] = local_payment or {"paymentUid": item["paymentUid"], "status": "PAID", "price": 0}
                     else:
                         item["payment"] = {}
             except (requests.RequestException, requests.Timeout):
                 if item.get("status") != "CANCELED":
                     local_payment = get_payment_local(item["paymentUid"])
-                    if local_payment:
-                        item["payment"] = local_payment
-                    else:
-                        item["payment"] = {"paymentUid": item["paymentUid"], "status": "PAID"}
+                    item["payment"] = local_payment or {"paymentUid": item["paymentUid"], "status": "PAID", "price": 0}
                 else:
                     item["payment"] = {}
         
@@ -589,19 +580,13 @@ async def get_rental(rental_uid: str, user: AuthenticatedUser = Depends(get_curr
             else:
                 if rental_data.get("status") != "CANCELED":
                     local_payment = get_payment_local(rental_data["paymentUid"])
-                    if local_payment:
-                        rental_data["payment"] = local_payment
-                    else:
-                        rental_data["payment"] = {"paymentUid": rental_data["paymentUid"], "status": "PAID"}
+                    rental_data["payment"] = local_payment or {"paymentUid": rental_data["paymentUid"], "status": "PAID", "price": 0}
                 else:
                     rental_data["payment"] = {}
         except (requests.RequestException, requests.Timeout):
             if rental_data.get("status") != "CANCELED":
                 local_payment = get_payment_local(rental_data["paymentUid"])
-                if local_payment:
-                    rental_data["payment"] = local_payment
-                else:
-                    rental_data["payment"] = {"paymentUid": rental_data["paymentUid"], "status": "PAID"}
+                rental_data["payment"] = local_payment or {"paymentUid": rental_data["paymentUid"], "status": "PAID", "price": 0}
             else:
                 rental_data["payment"] = {}
         

@@ -199,6 +199,11 @@ jobs:
           kubectl rollout status deployment/payment-service -n test --timeout=5m
           kubectl rollout status deployment/gateway-service -n test --timeout=5m
 
+      - name: Warm up gateway
+        run: |
+          set -e
+          curl -s http://localhost:8080/manage/health || true
+
       - name: Inspect gateway deployment
         run: |
           export KUBECONFIG=./kubeconfig
@@ -274,6 +279,23 @@ jobs:
           echo "Releasing car ${CAR_UID} via gateway"
           curl -s -X PATCH "http://localhost:8080/api/v1/cars/${CAR_UID}/availability?available=true" \
             -H "Authorization: Bearer ${TOKEN}" > /dev/null || true
+
+          echo "Verifying car availability..."
+          CARS_ALL=$(curl -s -H "Authorization: Bearer ${TOKEN}" "http://localhost:8080/api/v1/cars?page=1&size=10&showAll=true" || echo "{}")
+          echo "$CARS_ALL" | jq .
+          PRESENT=$(echo "$CARS_ALL" | jq -e --arg uid "$CAR_UID" '.items[]?|select(.carUid==$uid)' >/dev/null 2>&1 && echo yes || echo no)
+          if [ "$PRESENT" != "yes" ]; then
+            echo "Car $CAR_UID not found in cars list"
+            exit 1
+          fi
+
+          CARS_AVAIL=$(curl -s -H "Authorization: Bearer ${TOKEN}" "http://localhost:8080/api/v1/cars?page=1&size=10&showAll=false" || echo "{}")
+          echo "$CARS_AVAIL" | jq .
+          AVAILABLE=$(echo "$CARS_AVAIL" | jq -e --arg uid "$CAR_UID" '.items[]?|select(.carUid==$uid)' >/dev/null 2>&1 && echo yes || echo no)
+          if [ "$AVAILABLE" != "yes" ]; then
+            echo "Car $CAR_UID is not marked available after reset"
+            exit 1
+          fi
 
           rentals=$(curl -s -H "Authorization: Bearer ${TOKEN}" "http://localhost:8080/api/v1/rental" || echo "[]")
           if echo "${rentals}" | jq empty >/dev/null 2>&1; then

@@ -245,12 +245,7 @@
 							"type": "noauth"
 						},
 						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
+						"header": [],
 						"body": {
 							"mode": "raw",
 							"raw": "{\n    \"carUid\": \"{{carUid}}\",\n    \"dateFrom\": \"2021-10-08\",\n    \"dateTo\": \"2021-10-11\"\n}"

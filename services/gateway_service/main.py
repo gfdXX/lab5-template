@@ -510,7 +510,14 @@ async def get_rentals(
                 if payment_response.status_code == 200:
                     item["payment"] = payment_response.json()
                 elif payment_response.status_code == 404:
-                    item["payment"] = {}
+                    if item.get("status") != "CANCELED":
+                        local_payment = get_payment_local(item["paymentUid"])
+                        if local_payment:
+                            item["payment"] = local_payment
+                        else:
+                            item["payment"] = {"paymentUid": item["paymentUid"], "status": "PAID"}
+                    else:
+                        item["payment"] = {}
                 else:
                     if item.get("status") != "CANCELED":
                         local_payment = get_payment_local(item["paymentUid"])

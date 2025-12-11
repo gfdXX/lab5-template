@@ -312,6 +312,26 @@ def create_payment_local(price: int) -> dict:
         print(f"Local payment creation failed: {e}")
         return {}
 
+
+def get_payment_local(payment_uid: str) -> dict:
+    """Fallback: fetch payment directly from DB when payment service is unavailable."""
+    try:
+        conn = psycopg2.connect(PAYMENT_DATABASE_URL)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT payment_uid, status, price FROM payment WHERE payment_uid = %s",
+            (str(payment_uid),),
+        )
+        row = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        if not row:
+            return {}
+        return {"paymentUid": str(row[0]), "status": row[1], "price": row[2]}
+    except Exception as e:
+        print(f"Local payment fetch failed: {e}")
+        return {}
+
 @app.get("/manage/health")
 async def health_check():
     return {"status": "OK"}
@@ -493,12 +513,20 @@ async def get_rentals(
                     item["payment"] = {}
                 else:
                     if item.get("status") != "CANCELED":
-                        item["payment"] = {"paymentUid": item["paymentUid"], "status": "PAID"}
+                        local_payment = get_payment_local(item["paymentUid"])
+                        if local_payment:
+                            item["payment"] = local_payment
+                        else:
+                            item["payment"] = {"paymentUid": item["paymentUid"], "status": "PAID"}
                     else:
                         item["payment"] = {}
             except (requests.RequestException, requests.Timeout):
                 if item.get("status") != "CANCELED":
-                    item["payment"] = {"paymentUid": item["paymentUid"], "status": "PAID"}
+                    local_payment = get_payment_local(item["paymentUid"])
+                    if local_payment:
+                        item["payment"] = local_payment
+                    else:
+                        item["payment"] = {"paymentUid": item["paymentUid"], "status": "PAID"}
                 else:
                     item["payment"] = {}
         
@@ -553,12 +581,20 @@ async def get_rental(rental_uid: str, user: AuthenticatedUser = Depends(get_curr
                 rental_data["payment"] = {}
             else:
                 if rental_data.get("status") != "CANCELED":
-                    rental_data["payment"] = {"paymentUid": rental_data["paymentUid"], "status": "PAID"}
+                    local_payment = get_payment_local(rental_data["paymentUid"])
+                    if local_payment:
+                        rental_data["payment"] = local_payment
+                    else:
+                        rental_data["payment"] = {"paymentUid": rental_data["paymentUid"], "status": "PAID"}
                 else:
                     rental_data["payment"] = {}
         except (requests.RequestException, requests.Timeout):
             if rental_data.get("status") != "CANCELED":
-                rental_data["payment"] = {"paymentUid": rental_data["paymentUid"], "status": "PAID"}
+                local_payment = get_payment_local(rental_data["paymentUid"])
+                if local_payment:
+                    rental_data["payment"] = local_payment
+                else:
+                    rental_data["payment"] = {"paymentUid": rental_data["paymentUid"], "status": "PAID"}
             else:
                 rental_data["payment"] = {}
         

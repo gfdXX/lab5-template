@@ -9,7 +9,7 @@
     },
     {
       "key": "identityProviderUrl",
-      "value": "https://dev-x72evwvlbitajlk0.us.auth0.com",
+      "value": "http://localhost:8080",
       "enabled": true
     },
     {
@@ -24,17 +24,17 @@
     },
     {
       "key": "clientId",
-      "value": "pqn53cnXeQEFQW7xk5RHc0NsbRP6cEeQ",
+      "value": "rsoi-lab5-ci",
       "enabled": true
     },
     {
       "key": "clientSecret",
-      "value": "KGMAve77s3mF2oT8XBznOMnUELvc23FNjT4iLk3N3JJzISLe85jq8R9iG9u84gBw",
+      "value": "rsoi-lab5-ci-secret",
       "enabled": true
     },
     {
       "key": "audience",
-      "value": "https://dev-x72evwvlbitajlk0.us.auth0.com/api/v2/",
+      "value": "rsoi-lab5-ci",
       "enabled": true
     }
   ],

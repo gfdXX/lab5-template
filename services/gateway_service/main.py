@@ -1,9 +1,12 @@
-from fastapi import FastAPI, HTTPException, Depends, Query, status
+from fastapi import FastAPI, HTTPException, Depends, Form, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import List, Optional
 from uuid import UUID, uuid4
+import base64
+import json
+import jwt
 import requests
 import os
 import time
@@ -335,6 +338,48 @@ def get_payment_local(payment_uid: str) -> dict:
 @app.get("/manage/health")
 async def health_check():
     return {"status": "OK"}
+
+
+def _local_token_response(username: str, scope: Optional[str] = None):
+    if os.getenv("OIDC_ENABLE_LOCAL_TOKEN_ISSUER", "").lower() not in ("1", "true", "yes"):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+
+    try:
+        jwks = json.loads(AUTH_SETTINGS.jwks_json or "{}")
+        jwk = next(key for key in jwks.get("keys", []) if key.get("kty") == "oct")
+        secret = base64.urlsafe_b64decode(jwk["k"] + "=" * (-len(jwk["k"]) % 4))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Local token issuer is not configured") from exc
+
+    now = int(time.time())
+    payload = {
+        "sub": username,
+        "preferred_username": username,
+        "email": username,
+        "iss": AUTH_SETTINGS.issuer,
+        "aud": AUTH_SETTINGS.audience,
+        "iat": now,
+        "exp": now + 3600,
+        "scope": scope or AUTH_SETTINGS.scope,
+    }
+    access_token = jwt.encode(payload, secret, algorithm="HS256", headers={"kid": jwk.get("kid", "local-ci")})
+    return {
+        "access_token": access_token,
+        "token_type": "Bearer",
+        "expires_in": 3600,
+        "scope": payload["scope"],
+    }
+
+
+@app.post("/oauth/token")
+async def local_oauth_token(
+    username: str = Form(...),
+    password: str = Form(...),
+    scope: Optional[str] = Form(None),
+):
+    """Local Resource Owner Password token endpoint for CI/Postman tests."""
+    return _local_token_response(username=username, scope=scope)
+
 
 @app.post("/api/v1/authorize")
 async def authorize(auth_request: AuthRequest):

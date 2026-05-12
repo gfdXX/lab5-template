@@ -249,26 +249,23 @@ jobs:
       - name: Clean previous rentals via gateway (auth)
         run: |
           set -e
-          AUTH_DOMAIN="dev-x72evwvlbitajlk0.us.auth0.com"
-          CLIENT_ID="pqn53cnXeQEFQW7xk5RHc0NsbRP6cEeQ"
-          CLIENT_SECRET="KGMAve77s3mF2oT8XBznOMnUELvc23FNjT4iLk3N3JJzISLe85jq8R9iG9u84gBw"
+          CLIENT_ID="rsoi-lab5-ci"
+          CLIENT_SECRET="rsoi-lab5-ci-secret"
           USERNAME="salgikda@gmail.com"
           PASSWORD="6UwQQYX!djfqXSd"
-          AUDIENCE="https://dev-x72evwvlbitajlk0.us.auth0.com/api/v2/"
+          AUDIENCE="rsoi-lab5-ci"
 
           echo "Fetching access token for cleanup..."
-          TOKEN=$(curl -s -X POST "https://${AUTH_DOMAIN}/oauth/token" \
-            -H "content-type: application/json" \
-            -d "{
-              \"grant_type\": \"http://auth0.com/oauth/grant-type/password-realm\",
-              \"client_id\": \"${CLIENT_ID}\",
-              \"client_secret\": \"${CLIENT_SECRET}\",
-              \"username\": \"${USERNAME}\",
-              \"password\": \"${PASSWORD}\",
-              \"realm\": \"Username-Password-Authentication\",
-              \"audience\": \"${AUDIENCE}\",
-              \"scope\": \"openid profile email\"
-            }" | jq -r '.access_token')
+          TOKEN=$(curl -s -X POST "http://localhost:8080/oauth/token" \
+            -H "content-type: application/x-www-form-urlencoded" \
+            --data-urlencode "grant_type=http://auth0.com/oauth/grant-type/password-realm" \
+            --data-urlencode "client_id=${CLIENT_ID}" \
+            --data-urlencode "client_secret=${CLIENT_SECRET}" \
+            --data-urlencode "username=${USERNAME}" \
+            --data-urlencode "password=${PASSWORD}" \
+            --data-urlencode "realm=Username-Password-Authentication" \
+            --data-urlencode "audience=${AUDIENCE}" \
+            --data-urlencode "scope=openid profile email" | jq -r '.access_token')
 
           if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
             echo "Failed to obtain access token for cleanup"

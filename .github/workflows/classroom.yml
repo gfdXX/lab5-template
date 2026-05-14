@@ -1,4 +1,5 @@
 name: GitHub Classroom Workflow
+
 on:
   push:
     branches:
@@ -7,21 +8,27 @@ on:
     branches:
       - test
 
+concurrency:
+  group: classroom-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NAMESPACE: test
+  KUBECONFIG: ${{ github.workspace }}/kubeconfig
+  IMAGE_PREFIX: car-rental-service
+
 jobs:
   unit-tests:
     name: Unit Tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - uses: docker/setup-buildx-action@v2
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
+          cache: pip
 
       - name: Install dependencies
         run: |
@@ -29,351 +36,230 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run unit tests
-        run: |
-          python -m pytest services/ -v
+        run: python -m pytest services/ -v
 
   build-and-push:
-    name: Build and Push Docker Images
+    name: Build and Push Docker Image
     runs-on: ubuntu-latest
     needs: unit-tests
+    if: github.event_name == 'push'
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - uses: docker/setup-buildx-action@v2
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Log in to Docker Hub
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Build and push images
-        run: |
-          set -e
-          export DOCKER_USERNAME=${{ secrets.DOCKER_USERNAME }}
-          export DOCKER_IMAGE_BASE=$DOCKER_USERNAME/car-rental-service
-          export IMAGE_TAG=${GITHUB_SHA}
-
-          # Derive a deterministic docker compose project name (lowercase, alphanumeric + dash)
-          PROJECT_NAME=$(basename "$GITHUB_WORKSPACE")
-          PROJECT_NAME=$(echo "$PROJECT_NAME" | tr '[:upper:]' '[:lower:]')
-          PROJECT_NAME=$(echo "$PROJECT_NAME" | sed -E 's/[^a-z0-9]+/-/g')
-          export COMPOSE_PROJECT_NAME=$PROJECT_NAME
-
-          # Build images with docker compose
-          docker compose build
-
-          # Compose will tag images as <project>-<service>:latest
-          CARS_IMAGE=${COMPOSE_PROJECT_NAME}-cars-service:latest
-          RENTAL_IMAGE=${COMPOSE_PROJECT_NAME}-rental-service:latest
-          PAYMENT_IMAGE=${COMPOSE_PROJECT_NAME}-payment-service:latest
-          GATEWAY_IMAGE=${COMPOSE_PROJECT_NAME}-gateway-service:latest
-          IDENTITY_IMAGE=${COMPOSE_PROJECT_NAME}-identity-service:latest
-          STATISTICS_IMAGE=${COMPOSE_PROJECT_NAME}-statistics-service:latest
-          UI_IMAGE=${COMPOSE_PROJECT_NAME}-ui-service:latest
-
-          # Tag and push cars-service
-          docker tag "$CARS_IMAGE" "$DOCKER_IMAGE_BASE-cars:latest"
-          docker tag "$CARS_IMAGE" "$DOCKER_IMAGE_BASE-cars:$IMAGE_TAG"
-          docker push "$DOCKER_IMAGE_BASE-cars:latest"
-          docker push "$DOCKER_IMAGE_BASE-cars:$IMAGE_TAG"
-
-          # Tag and push rental-service
-          docker tag "$RENTAL_IMAGE" "$DOCKER_IMAGE_BASE-rental:latest"
-          docker tag "$RENTAL_IMAGE" "$DOCKER_IMAGE_BASE-rental:$IMAGE_TAG"
-          docker push "$DOCKER_IMAGE_BASE-rental:latest"
-          docker push "$DOCKER_IMAGE_BASE-rental:$IMAGE_TAG"
-
-          # Tag and push payment-service
-          docker tag "$PAYMENT_IMAGE" "$DOCKER_IMAGE_BASE-payment:latest"
-          docker tag "$PAYMENT_IMAGE" "$DOCKER_IMAGE_BASE-payment:$IMAGE_TAG"
-          docker push "$DOCKER_IMAGE_BASE-payment:latest"
-          docker push "$DOCKER_IMAGE_BASE-payment:$IMAGE_TAG"
-
-          # Tag and push gateway-service
-          docker tag "$GATEWAY_IMAGE" "$DOCKER_IMAGE_BASE-gateway:latest"
-          docker tag "$GATEWAY_IMAGE" "$DOCKER_IMAGE_BASE-gateway:$IMAGE_TAG"
-          docker push "$DOCKER_IMAGE_BASE-gateway:latest"
-          docker push "$DOCKER_IMAGE_BASE-gateway:$IMAGE_TAG"
-
-          docker tag "$IDENTITY_IMAGE" "$DOCKER_IMAGE_BASE-identity:latest"
-          docker tag "$IDENTITY_IMAGE" "$DOCKER_IMAGE_BASE-identity:$IMAGE_TAG"
-          docker push "$DOCKER_IMAGE_BASE-identity:latest"
-          docker push "$DOCKER_IMAGE_BASE-identity:$IMAGE_TAG"
-
-          docker tag "$STATISTICS_IMAGE" "$DOCKER_IMAGE_BASE-statistics:latest"
-          docker tag "$STATISTICS_IMAGE" "$DOCKER_IMAGE_BASE-statistics:$IMAGE_TAG"
-          docker push "$DOCKER_IMAGE_BASE-statistics:latest"
-          docker push "$DOCKER_IMAGE_BASE-statistics:$IMAGE_TAG"
-
-          docker tag "$UI_IMAGE" "$DOCKER_IMAGE_BASE-ui:latest"
-          docker tag "$UI_IMAGE" "$DOCKER_IMAGE_BASE-ui:$IMAGE_TAG"
-          docker push "$DOCKER_IMAGE_BASE-ui:latest"
-          docker push "$DOCKER_IMAGE_BASE-ui:$IMAGE_TAG"
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_PREFIX }}-cars:${{ github.sha }}
+            ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_PREFIX }}-cars:latest
+            ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_PREFIX }}-rental:${{ github.sha }}
+            ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_PREFIX }}-rental:latest
+            ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_PREFIX }}-payment:${{ github.sha }}
+            ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_PREFIX }}-payment:latest
+            ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_PREFIX }}-gateway:${{ github.sha }}
+            ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_PREFIX }}-gateway:latest
+            ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_PREFIX }}-identity:${{ github.sha }}
+            ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_PREFIX }}-identity:latest
+            ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_PREFIX }}-statistics:${{ github.sha }}
+            ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_PREFIX }}-statistics:latest
+            ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_PREFIX }}-ui:${{ github.sha }}
+            ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_PREFIX }}-ui:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   deploy:
     name: Deploy to Kubernetes
     runs-on: ubuntu-latest
     needs: build-and-push
+    if: github.event_name == 'push'
     env:
-      VARIANT: v3
-      DEPLOYMENT_NAME: payment-service
-      NAMESPACE: test
-      KUBECONFIG: ${{ github.workspace }}/kubeconfig
+      IMAGE_REPOSITORY_PREFIX: ${{ secrets.DOCKER_USERNAME }}/car-rental-service
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Set up kubectl
-        uses: azure/setup-kubectl@v3
+        uses: azure/setup-kubectl@v4
 
       - name: Set up Helm
-        uses: azure/setup-helm@v3
+        uses: azure/setup-helm@v4
         with:
-          version: '3.12.0'
+          version: "3.14.4"
 
       - name: Configure kubectl
         run: |
-          echo "${{ secrets.KUBECONFIG }}" | base64 -d > kubeconfig
-          export KUBECONFIG=./kubeconfig
-          kubectl config set-context --current --namespace=test
-          mkdir -p $HOME/.kube
-          cp kubeconfig $HOME/.kube/config
+          set -euo pipefail
+          echo "${{ secrets.KUBECONFIG }}" | base64 -d > "$KUBECONFIG"
+          chmod 600 "$KUBECONFIG"
+          kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+          kubectl config set-context --current --namespace="$NAMESPACE"
+          kubectl cluster-info
 
       - name: Deploy PostgreSQL
         run: |
-          export KUBECONFIG=./kubeconfig
+          set -euo pipefail
           helm upgrade --install postgres ./helm/postgres-chart \
-            --namespace test \
-            --create-namespace \
-            --wait
-
-      - name: Wait for PostgreSQL to be ready
-        run: |
-          export KUBECONFIG=./kubeconfig
-          kubectl rollout status deployment/postgres -n test --timeout=5m
-
-      - name: Run database initialization job
-        run: |
-          export KUBECONFIG=./kubeconfig
-          # Wait for postgres to be ready first
-          kubectl rollout status deployment/postgres -n test --timeout=5m
-          # Wait for init job to complete
-          kubectl wait --for=condition=complete job/postgres-init -n test --timeout=5m || true
+            --namespace "$NAMESPACE" \
+            --wait \
+            --timeout 10m
+          kubectl rollout status deployment/postgres -n "$NAMESPACE" --timeout=5m
 
       - name: Deploy Kafka
         run: |
-          export KUBECONFIG=./kubeconfig
+          set -euo pipefail
           helm upgrade --install kafka ./helm/service-chart \
-            --namespace test \
+            --namespace "$NAMESPACE" \
             -f ./helm/values/kafka.yaml \
-            --wait
+            --wait \
+            --timeout 10m
+          kubectl rollout status deployment/kafka -n "$NAMESPACE" --timeout=5m
 
-      - name: Deploy Identity Service
+      - name: Deploy application services
         run: |
-          export KUBECONFIG=./kubeconfig
-          helm upgrade --install identity-service ./helm/service-chart \
-            --namespace test \
-            -f ./helm/values/identity-service.yaml \
-            --set image.repository=${{ secrets.DOCKER_USERNAME }}/car-rental-service-identity \
-            --set image.tag=${GITHUB_SHA} \
-            --wait
+          set -euo pipefail
 
-      - name: Deploy Cars Service
-        run: |
-          export KUBECONFIG=./kubeconfig
-          helm upgrade --install cars-service ./helm/service-chart \
-            --namespace test \
-            -f ./helm/values/cars-service.yaml \
-            --set image.repository=${{ secrets.DOCKER_USERNAME }}/car-rental-service-cars \
-            --set image.tag=${GITHUB_SHA} \
-            --wait
+          deploy_service() {
+            local release="$1"
+            local values_file="$2"
+            local image_suffix="$3"
 
-      - name: Deploy Payment Service
-        run: |
-          export KUBECONFIG=./kubeconfig
-          helm upgrade --install payment-service ./helm/service-chart \
-            --namespace test \
-            -f ./helm/values/payment-service.yaml \
-            --set image.repository=${{ secrets.DOCKER_USERNAME }}/car-rental-service-payment \
-            --set image.tag=${GITHUB_SHA} \
-            --wait
+            echo "::group::Deploy ${release}"
+            if ! helm upgrade --install "$release" ./helm/service-chart \
+              --namespace "$NAMESPACE" \
+              -f "$values_file" \
+              --set image.repository="${IMAGE_REPOSITORY_PREFIX}-${image_suffix}" \
+              --set image.tag="$GITHUB_SHA" \
+              --wait \
+              --timeout 7m; then
+              echo "::error::Helm deployment failed for ${release}"
+              kubectl get deploy,pods,svc -n "$NAMESPACE" -l app.kubernetes.io/instance="$release" -o wide || true
+              kubectl describe deployment "$release" -n "$NAMESPACE" || true
+              kubectl describe pods -n "$NAMESPACE" -l app.kubernetes.io/instance="$release" || true
+              kubectl logs deployment/"$release" -n "$NAMESPACE" --tail=200 || true
+              echo "::endgroup::"
+              return 1
+            fi
 
-      - name: Deploy Rental Service
-        run: |
-          export KUBECONFIG=./kubeconfig
-          helm upgrade --install rental-service ./helm/service-chart \
-            --namespace test \
-            -f ./helm/values/rental-service.yaml \
-            --set image.repository=${{ secrets.DOCKER_USERNAME }}/car-rental-service-rental \
-            --set image.tag=${GITHUB_SHA} \
-            --wait
+            kubectl rollout status deployment/"$release" -n "$NAMESPACE" --timeout=5m
+            echo "::endgroup::"
+          }
 
-      - name: Deploy Statistics Service
-        run: |
-          export KUBECONFIG=./kubeconfig
-          helm upgrade --install statistics-service ./helm/service-chart \
-            --namespace test \
-            -f ./helm/values/statistics-service.yaml \
-            --set image.repository=${{ secrets.DOCKER_USERNAME }}/car-rental-service-statistics \
-            --set image.tag=${GITHUB_SHA} \
-            --wait
-
-      - name: Deploy Gateway Service
-        run: |
-          export KUBECONFIG=./kubeconfig
-          helm upgrade --install gateway-service ./helm/service-chart \
-            --namespace test \
-            -f ./helm/values/gateway-service.yaml \
-            --set image.repository=${{ secrets.DOCKER_USERNAME }}/car-rental-service-gateway \
-            --set image.tag=${GITHUB_SHA} \
-            --wait
-
-      - name: Deploy UI Service
-        run: |
-          export KUBECONFIG=./kubeconfig
-          helm upgrade --install ui-service ./helm/service-chart \
-            --namespace test \
-            -f ./helm/values/ui-service.yaml \
-            --set image.repository=${{ secrets.DOCKER_USERNAME }}/car-rental-service-ui \
-            --set image.tag=${GITHUB_SHA} \
-            --wait
-
-      - name: Wait before services are ready
-        run: |
-          export KUBECONFIG=./kubeconfig
-          kubectl rollout status deployment/gateway-service -n test --timeout=3m
-
-      - name: Wait for all services ready
-        run: |
-          export KUBECONFIG=./kubeconfig
-          kubectl rollout status deployment/cars-service -n test --timeout=5m
-          kubectl rollout status deployment/rental-service -n test --timeout=5m
-          kubectl rollout status deployment/payment-service -n test --timeout=5m
-          kubectl rollout status deployment/identity-service -n test --timeout=5m
-          kubectl rollout status deployment/statistics-service -n test --timeout=5m
-          kubectl rollout status deployment/gateway-service -n test --timeout=5m
-          kubectl rollout status deployment/ui-service -n test --timeout=5m
-
-      - name: Warm up gateway
-        run: |
-          set -e
-          curl -s http://localhost:8080/manage/health || true
-
-      - name: Inspect gateway deployment
-        run: |
-          export KUBECONFIG=./kubeconfig
-          kubectl get deploy gateway-service -n test -o wide || true
-          kubectl get pods -n test -l app.kubernetes.io/name=gateway-service -o wide || true
-          kubectl get svc gateway-service -n test -o wide || true
-          kubectl get ep gateway-service -n test || true
+          deploy_service identity-service ./helm/values/identity-service.yaml identity
+          deploy_service cars-service ./helm/values/cars-service.yaml cars
+          deploy_service payment-service ./helm/values/payment-service.yaml payment
+          deploy_service rental-service ./helm/values/rental-service.yaml rental
+          deploy_service statistics-service ./helm/values/statistics-service.yaml statistics
+          deploy_service gateway-service ./helm/values/gateway-service.yaml gateway
+          deploy_service ui-service ./helm/values/ui-service.yaml ui
 
       - name: Start port-forward to gateway
         run: |
-          export KUBECONFIG=./kubeconfig
-          nohup kubectl port-forward service/gateway-service -n test 8080:8080 > port-forward.log 2>&1 &
+          set -euo pipefail
+          nohup kubectl port-forward -n "$NAMESPACE" service/gateway-service 8080:8080 > port-forward.log 2>&1 &
           echo $! > port-forward.pid
-          for i in $(seq 1 30); do
+
+          for i in $(seq 1 45); do
             if nc -z localhost 8080; then
               echo "Port-forward is ready."
               exit 0
             fi
-            if ! kill -0 $(cat port-forward.pid) 2>/dev/null; then
+            if ! kill -0 "$(cat port-forward.pid)" 2>/dev/null; then
               echo "Port-forward process exited unexpectedly."
               cat port-forward.log
               exit 1
             fi
             sleep 1
           done
+
           echo "Port-forward did not become ready in time."
           cat port-forward.log
           exit 1
 
       - name: Smoke-check gateway requires auth
         run: |
-          set -e
-          curl -i http://localhost:8080/manage/health
-          # Should be 401 without Authorization header
-          HTTP_CODE=$(curl -s -o /tmp/gw_noauth_body -w "%{http_code}" http://localhost:8080/api/v1/cars)
-          echo "Gateway /cars without auth returned HTTP $HTTP_CODE"
-          if [ "$HTTP_CODE" != "401" ]; then
+          set -euo pipefail
+          curl -fsS http://localhost:8080/manage/health
+
+          http_code=$(curl -sS -o /tmp/gw_noauth_body -w "%{http_code}" http://localhost:8080/api/v1/cars)
+          echo "Gateway /cars without auth returned HTTP ${http_code}"
+          if [ "$http_code" != "401" ]; then
             echo "Expected 401 from gateway without Authorization header"
             cat /tmp/gw_noauth_body
             exit 1
           fi
 
-      - name: Clean previous rentals via gateway (auth)
+      - name: Clean previous rentals via gateway
         run: |
-          set -e
-          CLIENT_ID="rsoi-lab5-ci"
-          CLIENT_SECRET="rsoi-lab5-ci-secret"
-          USERNAME="salgikda@gmail.com"
-          PASSWORD="6UwQQYX!djfqXSd"
-          AUDIENCE="rsoi-lab5-ci"
+          set -euo pipefail
+          client_id="rsoi-lab5-ci"
+          client_secret="rsoi-lab5-ci-secret"
+          username="salgikda@gmail.com"
+          password="6UwQQYX!djfqXSd"
+          car_uid="109b42f3-198d-4c89-9276-a7520a7120ab"
 
-          echo "Fetching access token for cleanup..."
-          TOKEN=$(curl -s -X POST "http://localhost:8080/oauth/token" \
+          token=$(curl -fsS -X POST "http://localhost:8080/oauth/token" \
             -H "content-type: application/x-www-form-urlencoded" \
             --data-urlencode "grant_type=http://auth0.com/oauth/grant-type/password-realm" \
-            --data-urlencode "client_id=${CLIENT_ID}" \
-            --data-urlencode "client_secret=${CLIENT_SECRET}" \
-            --data-urlencode "username=${USERNAME}" \
-            --data-urlencode "password=${PASSWORD}" \
+            --data-urlencode "client_id=${client_id}" \
+            --data-urlencode "client_secret=${client_secret}" \
+            --data-urlencode "username=${username}" \
+            --data-urlencode "password=${password}" \
             --data-urlencode "realm=Username-Password-Authentication" \
-            --data-urlencode "audience=${AUDIENCE}" \
+            --data-urlencode "audience=${client_id}" \
             --data-urlencode "scope=openid profile email" | jq -r '.access_token')
 
-          if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+          if [ -z "$token" ] || [ "$token" = "null" ]; then
             echo "Failed to obtain access token for cleanup"
             exit 1
           fi
 
-          CAR_UID="109b42f3-198d-4c89-9276-a7520a7120ab"
-          echo "Releasing car ${CAR_UID} via gateway"
-          curl -s -X PATCH "http://localhost:8080/api/v1/cars/${CAR_UID}/availability?available=true" \
-            -H "Authorization: Bearer ${TOKEN}" > /dev/null || true
+          curl -fsS -X PATCH "http://localhost:8080/api/v1/cars/${car_uid}/availability?available=true" \
+            -H "Authorization: Bearer ${token}" > /dev/null || true
 
-          echo "Verifying car availability..."
-          CARS_ALL=$(curl -s -H "Authorization: Bearer ${TOKEN}" "http://localhost:8080/api/v1/cars?page=1&size=10&showAll=true" || echo "{}")
-          echo "$CARS_ALL" | jq .
-          PRESENT=$(echo "$CARS_ALL" | jq -e --arg uid "$CAR_UID" '.items[]?|select(.carUid==$uid)' >/dev/null 2>&1 && echo yes || echo no)
-          if [ "$PRESENT" != "yes" ]; then
-            echo "Car $CAR_UID not found in cars list"
+          cars_all=$(curl -fsS -H "Authorization: Bearer ${token}" "http://localhost:8080/api/v1/cars?page=1&size=20&showAll=true")
+          echo "$cars_all" | jq .
+          if ! echo "$cars_all" | jq -e --arg uid "$car_uid" '.items[]?|select(.carUid==$uid)' >/dev/null; then
+            echo "Car ${car_uid} not found in cars list"
             exit 1
           fi
 
-          CARS_AVAIL=$(curl -s -H "Authorization: Bearer ${TOKEN}" "http://localhost:8080/api/v1/cars?page=1&size=10&showAll=false" || echo "{}")
-          echo "$CARS_AVAIL" | jq .
-          AVAILABLE=$(echo "$CARS_AVAIL" | jq -e --arg uid "$CAR_UID" '.items[]?|select(.carUid==$uid)' >/dev/null 2>&1 && echo yes || echo no)
-          if [ "$AVAILABLE" != "yes" ]; then
-            echo "Car $CAR_UID is not marked available after reset"
+          cars_available=$(curl -fsS -H "Authorization: Bearer ${token}" "http://localhost:8080/api/v1/cars?page=1&size=20&showAll=false")
+          echo "$cars_available" | jq .
+          if ! echo "$cars_available" | jq -e --arg uid "$car_uid" '.items[]?|select(.carUid==$uid)' >/dev/null; then
+            echo "Car ${car_uid} is not marked available after reset"
             exit 1
           fi
 
-          rentals=$(curl -s -H "Authorization: Bearer ${TOKEN}" "http://localhost:8080/api/v1/rental" || echo "[]")
-          if echo "${rentals}" | jq empty >/dev/null 2>&1; then
-            ids=$(echo "${rentals}" | jq -r '
-              def rentals_array:
-                if type == "array" then .
-                elif type == "object" and has("items") then .items
-                else []
-                end;
-              rentals_array
-              | map(select(.status != "CANCELED") | .rentalUid)
-              | .[]?')
-            if [ -n "${ids}" ]; then
-              for id in $ids; do
-                echo "Cancelling leftover rental ${id} via gateway"
-                curl -s -o /dev/null -X DELETE -H "Authorization: Bearer ${TOKEN}" "http://localhost:8080/api/v1/rental/${id}" || true
-              done
-            else
-              echo "No active rentals found"
-            fi
+          rentals=$(curl -fsS -H "Authorization: Bearer ${token}" "http://localhost:8080/api/v1/rental" || echo "[]")
+          ids=$(echo "$rentals" | jq -r '
+            def rentals_array:
+              if type == "array" then .
+              elif type == "object" and has("items") then .items
+              else []
+              end;
+            rentals_array
+            | map(select(.status != "CANCELED") | .rentalUid)
+            | .[]?')
+
+          if [ -z "$ids" ]; then
+            echo "No active rentals found"
           else
-            echo "Gateway returned invalid JSON, skipping rental cleanup"
+            for id in $ids; do
+              echo "Cancelling leftover rental ${id} via gateway"
+              curl -fsS -o /dev/null -X DELETE \
+                -H "Authorization: Bearer ${token}" \
+                "http://localhost:8080/api/v1/rental/${id}" || true
+            done
           fi
 
       - name: Autograding
@@ -383,7 +269,7 @@ jobs:
         if: always()
         run: |
           if [ -f port-forward.pid ]; then
-            kill $(cat port-forward.pid) >/dev/null 2>&1 || true
+            kill "$(cat port-forward.pid)" >/dev/null 2>&1 || true
             rm -f port-forward.pid
           fi
           if [ -f port-forward.log ]; then
@@ -392,15 +278,16 @@ jobs:
             rm -f port-forward.log
           fi
 
-      - name: Collect logs on failure
+      - name: Collect Kubernetes diagnostics on failure
         if: failure()
         run: |
-          export KUBECONFIG=./kubeconfig
-          echo "Gateway logs:"
-          kubectl logs deployment/gateway-service -n test --tail=200 || true
-          echo "Rental logs:"
-          kubectl logs deployment/rental-service -n test --tail=200 || true
-          echo "Payment logs:"
-          kubectl logs deployment/payment-service -n test --tail=200 || true
-          echo "Cars logs:"
-          kubectl logs deployment/cars-service -n test --tail=200 || true
+          set +e
+          kubectl get all,ingress -n "$NAMESPACE" -o wide
+          for deployment in postgres kafka identity-service cars-service payment-service rental-service statistics-service gateway-service ui-service; do
+            echo "::group::${deployment}"
+            kubectl describe deployment "$deployment" -n "$NAMESPACE"
+            kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/instance="$deployment" -o wide
+            kubectl describe pods -n "$NAMESPACE" -l app.kubernetes.io/instance="$deployment"
+            kubectl logs deployment/"$deployment" -n "$NAMESPACE" --tail=200
+            echo "::endgroup::"
+          done

@@ -114,7 +114,7 @@ async def get_cars(
             query = query.filter(Car.availability == True)
         
         total = query.count()
-        cars = query.offset((page - 1) * pageSize).limit(pageSize).all()
+        cars = query.order_by(Car.id.asc()).offset((page - 1) * pageSize).limit(pageSize).all()
         
         print(f"Cars service: Found {total} cars, returning {len(cars)} cars")
         

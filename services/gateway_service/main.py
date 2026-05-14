@@ -464,7 +464,7 @@ async def callback(code: Optional[str] = None, state: Optional[str] = None, redi
 async def get_cars(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
-    show_all: bool = Query(False),
+    show_all: bool = Query(False, alias="showAll"),
     user: AuthenticatedUser = Depends(get_current_user),
 ):
     """Get list of available cars"""
@@ -540,35 +540,20 @@ async def get_rentals(
             except (requests.RequestException, requests.Timeout):
                 item["car"] = {"carUid": item["carUid"]}
             
-            try:
-                payment_response = requests.get(
-                    f"{PAYMENT_SERVICE_URL}/api/v1/payments/{item['paymentUid']}",
-                    headers=auth_header_for(user.token),
-                    timeout=3
-                )
-                if payment_response.status_code == 200:
-                    item["payment"] = payment_response.json()
-                elif payment_response.status_code == 404:
-                    if item.get("status") != "CANCELED":
-                        local_payment = get_payment_local(item["paymentUid"])
-                        item["payment"] = local_payment or {"paymentUid": item["paymentUid"], "status": "PAID", "price": 0}
-                    else:
-                        local_payment = get_payment_local(item["paymentUid"])
-                        item["payment"] = local_payment or {"paymentUid": item["paymentUid"], "status": "CANCELED", "price": 0}
-                else:
-                    if item.get("status") != "CANCELED":
-                        local_payment = get_payment_local(item["paymentUid"])
-                        item["payment"] = local_payment or {"paymentUid": item["paymentUid"], "status": "PAID", "price": 0}
-                    else:
-                        local_payment = get_payment_local(item["paymentUid"])
-                        item["payment"] = local_payment or {"paymentUid": item["paymentUid"], "status": "CANCELED", "price": 0}
-            except (requests.RequestException, requests.Timeout):
-                if item.get("status") != "CANCELED":
-                    local_payment = get_payment_local(item["paymentUid"])
-                    item["payment"] = local_payment or {"paymentUid": item["paymentUid"], "status": "PAID", "price": 0}
-                else:
-                    local_payment = get_payment_local(item["paymentUid"])
-                    item["payment"] = local_payment or {"paymentUid": item["paymentUid"], "status": "CANCELED", "price": 0}
+            local_payment = get_payment_local(item["paymentUid"])
+            if local_payment:
+                item["payment"] = local_payment
+            else:
+                try:
+                    payment_response = requests.get(
+                        f"{PAYMENT_SERVICE_URL}/api/v1/payments/{item['paymentUid']}",
+                        headers=auth_header_for(user.token),
+                        timeout=0.5
+                    )
+                    if payment_response.status_code == 200:
+                        item["payment"] = payment_response.json()
+                except (requests.RequestException, requests.Timeout):
+                    pass
 
             # Ensure payment object is always present with status/price
             if not item.get("payment"):
@@ -623,35 +608,20 @@ async def get_rental(rental_uid: str, user: AuthenticatedUser = Depends(get_curr
         except (requests.RequestException, requests.Timeout):
             rental_data["car"] = {"carUid": rental_data["carUid"]}
         
-        try:
-            payment_response = requests.get(
-                f"{PAYMENT_SERVICE_URL}/api/v1/payments/{rental_data['paymentUid']}",
-                headers=auth_header_for(user.token),
-                timeout=3
-            )
-            if payment_response.status_code == 200:
-                rental_data["payment"] = payment_response.json()
-            elif payment_response.status_code == 404:
-                if rental_data.get("status") != "CANCELED":
-                    local_payment = get_payment_local(rental_data["paymentUid"])
-                    rental_data["payment"] = local_payment or {"paymentUid": rental_data["paymentUid"], "status": "PAID", "price": 0}
-                else:
-                    local_payment = get_payment_local(rental_data["paymentUid"])
-                    rental_data["payment"] = local_payment or {"paymentUid": rental_data["paymentUid"], "status": "CANCELED", "price": 0}
-            else:
-                if rental_data.get("status") != "CANCELED":
-                    local_payment = get_payment_local(rental_data["paymentUid"])
-                    rental_data["payment"] = local_payment or {"paymentUid": rental_data["paymentUid"], "status": "PAID", "price": 0}
-                else:
-                    local_payment = get_payment_local(rental_data["paymentUid"])
-                    rental_data["payment"] = local_payment or {"paymentUid": rental_data["paymentUid"], "status": "CANCELED", "price": 0}
-        except (requests.RequestException, requests.Timeout):
-            if rental_data.get("status") != "CANCELED":
-                local_payment = get_payment_local(rental_data["paymentUid"])
-                rental_data["payment"] = local_payment or {"paymentUid": rental_data["paymentUid"], "status": "PAID", "price": 0}
-            else:
-                local_payment = get_payment_local(rental_data["paymentUid"])
-                rental_data["payment"] = local_payment or {"paymentUid": rental_data["paymentUid"], "status": "CANCELED", "price": 0}
+        local_payment = get_payment_local(rental_data["paymentUid"])
+        if local_payment:
+            rental_data["payment"] = local_payment
+        else:
+            try:
+                payment_response = requests.get(
+                    f"{PAYMENT_SERVICE_URL}/api/v1/payments/{rental_data['paymentUid']}",
+                    headers=auth_header_for(user.token),
+                    timeout=0.5
+                )
+                if payment_response.status_code == 200:
+                    rental_data["payment"] = payment_response.json()
+            except (requests.RequestException, requests.Timeout):
+                pass
 
         # Ensure payment object includes status and price
         if not rental_data.get("payment"):
@@ -916,9 +886,9 @@ async def cancel_rental(rental_uid: str, user: AuthenticatedUser = Depends(get_c
         except requests.RequestException as e:
             print(f"Car release failed: {e}")
         
-        # Update rental status with retry (10s)
+        # Keep retries short so fallback cancellation stays responsive.
         start_time = time.time()
-        timeout_seconds = 10
+        timeout_seconds = 2
         while time.time() - start_time < timeout_seconds:
             try:
                 cancel_response = requests.delete(

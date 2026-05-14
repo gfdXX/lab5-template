@@ -12,7 +12,7 @@ env:
   - name: UI_API_BASE_URL
     value: "http://localhost:8080"
   - name: UI_IDENTITY_URL
-    value: "http://localhost:8080"
+    value: "http://localhost:8090"
   - name: OIDC_CLIENT_ID
     value: "rsoi-lab5-ci"
   - name: OIDC_REDIRECT_URI
@@ -35,4 +35,3 @@ ingress:
       paths:
         - path: /
           pathType: Prefix
-

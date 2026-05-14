@@ -101,6 +101,9 @@ jobs:
           set -euo pipefail
           echo "${{ secrets.KUBECONFIG }}" | base64 -d > "$KUBECONFIG"
           chmod 600 "$KUBECONFIG"
+          mkdir -p "$HOME/.kube"
+          cp "$KUBECONFIG" "$HOME/.kube/config"
+          chmod 600 "$HOME/.kube/config"
           kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
           kubectl config set-context --current --namespace="$NAMESPACE"
           kubectl cluster-info
@@ -294,6 +297,11 @@ jobs:
 
       - name: Autograding
         uses: education/autograding@v1
+        env:
+          KUBECONFIG: ${{ github.workspace }}/kubeconfig
+          NAMESPACE: test
+          DEPLOYMENT_NAME: payment-service
+          VARIANT: v3
 
       - name: Stop port-forward
         if: always()

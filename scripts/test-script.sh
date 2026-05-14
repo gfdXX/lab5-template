@@ -8,6 +8,10 @@ namespace=${3:-${NAMESPACE}}
 
 [[ -z $namespace ]] && namespace="default"
 
+if [[ ! -r "${KUBECONFIG:-}" && -f ./kubeconfig ]]; then
+  export KUBECONFIG="$(pwd)/kubeconfig"
+fi
+
 path=$(dirname "$0")
 
 timed() {
@@ -38,7 +42,10 @@ step() {
 
   printf "=== Step %d: scale %s to %s ===\n" "$step" "$deployment" "$replicas"
 
-  kubectl scale deployment "$deployment" -n "$namespace" --replicas "$replicas" 
+  kubectl cluster-info
+  kubectl get deployment "$deployment" -n "$namespace"
+  kubectl scale deployment "$deployment" -n "$namespace" --replicas "$replicas"
+  kubectl rollout status deployment "$deployment" -n "$namespace" --timeout=60s
 
   newman run \
     --delay-request=100 \

@@ -137,8 +137,8 @@ jobs:
             --wait \
             --atomic \
             --cleanup-on-fail \
-            --timeout 10m
-          kubectl rollout status deployment/postgres -n "$NAMESPACE" --timeout=5m
+            --timeout 1m
+          kubectl rollout status deployment/postgres -n "$NAMESPACE" --timeout=1m
 
       - name: Deploy Kafka
         run: |
@@ -149,8 +149,8 @@ jobs:
             --wait \
             --atomic \
             --cleanup-on-fail \
-            --timeout 10m
-          kubectl rollout status deployment/kafka -n "$NAMESPACE" --timeout=5m
+            --timeout 1m
+          kubectl rollout status deployment/kafka -n "$NAMESPACE" --timeout=1m
 
       - name: Deploy application services
         run: |
@@ -170,7 +170,7 @@ jobs:
               --wait \
               --atomic \
               --cleanup-on-fail \
-              --timeout 7m; then
+              --timeout 1m; then
               echo "::error::Helm deployment failed for ${release}"
               kubectl get deploy,pods,svc -n "$NAMESPACE" -l app.kubernetes.io/instance="$release" -o wide || true
               kubectl describe deployment "$release" -n "$NAMESPACE" || true
@@ -180,7 +180,7 @@ jobs:
               return 1
             fi
 
-            kubectl rollout status deployment/"$release" -n "$NAMESPACE" --timeout=5m
+            kubectl rollout status deployment/"$release" -n "$NAMESPACE" --timeout=1m
             echo "::endgroup::"
           }
 
@@ -198,7 +198,7 @@ jobs:
           nohup kubectl port-forward -n "$NAMESPACE" service/gateway-service 8080:8080 > port-forward.log 2>&1 &
           echo $! > port-forward.pid
 
-          for i in $(seq 1 45); do
+          for i in $(seq 1 60); do
             if nc -z localhost 8080; then
               echo "Port-forward is ready."
               exit 0

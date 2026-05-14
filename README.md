@@ -137,6 +137,34 @@ docker compose up --build
 * `/api` и `/manage` → Gateway
 * `/oauth` и `/.well-known` → Identity Provider
 
+Если в кластере еще нет Ingress Controller, установите `ingress-nginx`:
+
+```bash
+helm upgrade --install ingress-nginx ingress-nginx \
+  --repo https://kubernetes.github.io/ingress-nginx \
+  --namespace ingress-nginx \
+  --create-namespace \
+  --set controller.service.type=LoadBalancer \
+  --wait \
+  --timeout 5m
+```
+
+Проверить внешний IP:
+
+```bash
+kubectl get svc -n ingress-nginx ingress-nginx-controller
+kubectl get ingress -n test -o wide
+```
+
+После выдачи внешнего IP сайт доступен по адресу:
+
+```text
+http://<EXTERNAL-IP>/
+```
+
+Если `kubectl get ingress` показывает адрес, но сайт не открывается с компьютера, проверьте доступность TCP 80/443
+в группе безопасности Yandex Cloud и попробуйте открыть адрес без VPN.
+
 ### Прием задания
 
 1. При получении задания у вас создается fork этого репозитория для вашего пользователя.

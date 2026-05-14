@@ -29,7 +29,7 @@ PAGE = Template(
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Car Rental</title>
+  <title>Аренда автомобилей</title>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <style>
@@ -375,7 +375,7 @@ PAGE = Template(
     }
 
     function money(value) {
-      return new Intl.NumberFormat("en-US", { style: "currency", currency: "RUB", maximumFractionDigits: 0 }).format(value || 0);
+      return new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 }).format(value || 0);
     }
 
     function rentalDays(from, to) {
@@ -387,6 +387,17 @@ PAGE = Template(
 
     function statusClass(status) {
       return status === "IN_PROGRESS" ? "pill good" : "pill warn";
+    }
+
+    function statusText(status) {
+      const labels = {
+        IN_PROGRESS: "Активна",
+        FINISHED: "Завершена",
+        CANCELED: "Отменена",
+        PAID: "Оплачено",
+        CANCELED_PAYMENT: "Отменено"
+      };
+      return labels[status] || status || "Неизвестно";
     }
 
     function App() {
@@ -498,10 +509,11 @@ PAGE = Template(
 
       async function register(ev) {
         ev.preventDefault();
+        const formEl = ev.currentTarget;
         setBusy(true);
         setError("");
         setMessage("");
-        const form = new FormData(ev.currentTarget);
+        const form = new FormData(formEl);
         const payload = Object.fromEntries(form.entries());
         try {
           await fetch(CONFIG.apiBase + "/api/v1/register", {
@@ -511,13 +523,13 @@ PAGE = Template(
           }).then(function (res) {
             return res.text().then(function (text) {
               const data = text ? JSON.parse(text) : {};
-              if (!res.ok) throw new Error(data.detail || text || "Registration failed");
+              if (!res.ok) throw new Error(data.detail || text || "Не удалось создать аккаунт");
               return data;
             });
           });
-          ev.currentTarget.reset();
+          formEl.reset();
           setAuthMode("signin");
-          setMessage("Account created. Sign in through the Identity Provider with your username and password.");
+          setMessage("Аккаунт создан. Теперь войдите через провайдер идентификации с указанными логином и паролем.");
         } catch (err) {
           setError(err.message);
         } finally {
@@ -531,13 +543,14 @@ PAGE = Template(
         setMessage("");
         try {
           const days = rentalDays(dateFrom, dateTo);
-          if (!days) throw new Error("Choose a valid date range.");
+          if (!days) throw new Error("Выберите корректный период аренды.");
+          if (!car.availability) throw new Error("Этот автомобиль сейчас занят. Выберите доступный автомобиль.");
           const booking = await api("/api/v1/rental", {
             method: "POST",
             body: JSON.stringify({ carUid: car.carUid, dateFrom: dateFrom, dateTo: dateTo })
           });
           const payment = booking.payment || {};
-          setMessage("Booking paid: " + car.brand + " " + car.model + ", " + money(payment.price || car.price * days) + ". Payment status: " + (payment.status || "PAID") + ".");
+          setMessage("Бронирование оплачено: " + car.brand + " " + car.model + ", " + money(payment.price || car.price * days) + ". Статус платежа: " + statusText(payment.status || "PAID") + ".");
           await loadCars();
           await loadRentals();
         } catch (err) {
@@ -552,7 +565,7 @@ PAGE = Template(
         setError("");
         try {
           await api("/api/v1/rental/" + rental.rentalUid + "/finish", { method: "POST" });
-          setMessage("Rental finished.");
+          setMessage("Аренда завершена.");
           await loadRentals();
           await loadCars();
         } catch (err) {
@@ -567,7 +580,7 @@ PAGE = Template(
         setError("");
         try {
           await api("/api/v1/rental/" + rental.rentalUid, { method: "DELETE" });
-          setMessage("Rental canceled.");
+          setMessage("Аренда отменена.");
           await loadRentals();
           await loadCars();
         } catch (err) {
@@ -579,15 +592,16 @@ PAGE = Template(
 
       async function addUser(ev) {
         ev.preventDefault();
+        const formEl = ev.currentTarget;
         setBusy(true);
         setError("");
         setMessage("");
-        const form = new FormData(ev.currentTarget);
+        const form = new FormData(formEl);
         const payload = Object.fromEntries(form.entries());
         try {
           await api("/api/v1/users", { method: "POST", body: JSON.stringify(payload) });
-          ev.currentTarget.reset();
-          setMessage("User " + payload.username + " created. They can now sign in through the Identity Provider.");
+          formEl.reset();
+          setMessage("Пользователь " + payload.username + " создан. Теперь он может войти через провайдер идентификации.");
           await loadAdmin();
         } catch (err) {
           setError(err.message);
@@ -617,32 +631,32 @@ PAGE = Template(
             h("div", { className: "topbar-inner" },
               h("div", { className: "brand" },
                 h("div", { className: "brand-mark" }, "CR"),
-                h("div", null, h("h1", null, "Car Rental"), h("p", null, "Coursework demo with OpenID Connect"))
+                h("div", null, h("h1", null, "Аренда автомобилей"), h("p", null, "Курсовой проект с OpenID Connect"))
               ),
-              h("button", { className: "btn ghost", onClick: login, disabled: busy }, busy ? "Signing in..." : "Sign in")
+              h("button", { className: "btn ghost", onClick: login, disabled: busy }, busy ? "Входим..." : "Войти")
             )
           ),
           h("main", { className: "login-main" },
             h("section", { className: "login-copy" },
-              h("h2", null, "Book cars, manage rentals, review activity."),
-              h("p", null, "The application uses its own Identity Provider. Admin users can create accounts and view the Kafka-powered statistics report.")
+              h("h2", null, "Бронируйте автомобили, управляйте арендой и смотрите статистику."),
+              h("p", null, "Приложение использует собственный провайдер идентификации. Администратор может создавать пользователей и просматривать отчет по событиям из Kafka.")
             ),
             h("section", { className: "login-box" },
               h("div", { className: "auth-toggle" },
-                h("button", { className: authMode === "signin" ? "active" : "", onClick: function () { setAuthMode("signin"); setError(""); setMessage(""); } }, "Sign in"),
-                h("button", { className: authMode === "register" ? "active" : "", onClick: function () { setAuthMode("register"); setError(""); setMessage(""); } }, "Register")
+                h("button", { className: authMode === "signin" ? "active" : "", onClick: function () { setAuthMode("signin"); setError(""); setMessage(""); } }, "Вход"),
+                h("button", { className: authMode === "register" ? "active" : "", onClick: function () { setAuthMode("register"); setError(""); setMessage(""); } }, "Регистрация")
               ),
-              h("h3", null, authMode === "signin" ? "Secure sign in" : "Create an account"),
-              h("p", null, authMode === "signin" ? "Continue through the Identity Provider to receive an OpenID Connect JWT for all API requests." : "New accounts are created with the User role and can sign in immediately."),
+              h("h3", null, authMode === "signin" ? "Безопасный вход" : "Создать аккаунт"),
+              h("p", null, authMode === "signin" ? "Войдите через провайдер идентификации, чтобы получить JWT для запросов к API." : "Новые аккаунты создаются с ролью Пользователь и могут сразу войти в систему."),
               error && h("div", { className: "error" }, error),
               message && h("div", { className: "notice" }, message),
-              authMode === "signin" && h("button", { className: "btn primary", onClick: login, disabled: busy }, busy ? "Please wait..." : "Continue with Identity Provider"),
+              authMode === "signin" && h("button", { className: "btn primary", onClick: login, disabled: busy }, busy ? "Подождите..." : "Войти через провайдер"),
               authMode === "register" && h("form", { className: "form auth-form", onSubmit: register },
-                h("label", null, "Username", h("input", { name: "username", placeholder: "new.user", required: true })),
+                h("label", null, "Логин", h("input", { name: "username", placeholder: "new.user", required: true })),
                 h("label", null, "Email", h("input", { name: "email", type: "email", placeholder: "user@example.com", required: true })),
-                h("label", null, "Full name", h("input", { name: "fullName", placeholder: "New User" })),
-                h("label", null, "Password", h("input", { name: "password", type: "password", placeholder: "At least 6 characters", required: true, minLength: 6 })),
-                h("button", { className: "btn primary", disabled: busy }, busy ? "Creating..." : "Create account")
+                h("label", null, "Имя", h("input", { name: "fullName", placeholder: "Иван Иванов" })),
+                h("label", null, "Пароль", h("input", { name: "password", type: "password", placeholder: "Минимум 6 символов", required: true, minLength: 6 })),
+                h("button", { className: "btn primary", disabled: busy }, busy ? "Создаем..." : "Создать аккаунт")
               )
             )
           )
@@ -654,19 +668,19 @@ PAGE = Template(
           h("div", { className: "topbar-inner" },
             h("div", { className: "brand" },
               h("div", { className: "brand-mark" }, "CR"),
-              h("div", null, h("h1", null, "Car Rental"), h("p", null, "Cars, rentals and admin reports"))
+              h("div", null, h("h1", null, "Аренда автомобилей"), h("p", null, "Автомобили, бронирования и отчеты"))
             ),
             h("div", { className: "account" },
-              h("span", { className: "user-chip" }, username, isAdmin ? h("span", { className: "pill good" }, "Admin") : h("span", { className: "pill" }, "User")),
-              h("button", { className: "btn ghost", onClick: function () { tokenStore.clear(); setToken(null); setCars([]); setRentals([]); } }, "Sign out")
+              h("span", { className: "user-chip" }, username, isAdmin ? h("span", { className: "pill good" }, "Админ") : h("span", { className: "pill" }, "Пользователь")),
+              h("button", { className: "btn ghost", onClick: function () { tokenStore.clear(); setToken(null); setCars([]); setRentals([]); } }, "Выйти")
             )
           )
         ),
         h("main", null,
           h("div", { className: "intro" },
             h("div", null,
-              h("h2", null, tab === "admin" ? "Administration" : (tab === "rentals" ? "Your rentals" : "Available cars")),
-              h("p", null, tab === "admin" ? "Create users and inspect the activity report collected from Kafka events." : "Choose dates, rent a car, and track active bookings from one place.")
+              h("h2", null, tab === "admin" ? "Администрирование" : (tab === "rentals" ? "Мои бронирования" : "Доступные автомобили")),
+              h("p", null, tab === "admin" ? "Создавайте пользователей и смотрите отчет по событиям Kafka." : "Выберите даты, забронируйте автомобиль и отслеживайте аренды в одном месте.")
             ),
             h("div", { className: "actions" },
               h("input", { className: "date-field", type: "date", value: dateFrom, onChange: function (ev) { setDateFrom(ev.target.value); } }),
@@ -678,18 +692,18 @@ PAGE = Template(
           h("div", { className: "nav" },
             h("div", { className: "tabs" },
               ["cars", "rentals"].concat(isAdmin ? ["admin"] : []).map(function (name) {
-                const label = name === "cars" ? "Cars" : (name === "rentals" ? "Rentals" : "Admin");
+                const label = name === "cars" ? "Автомобили" : (name === "rentals" ? "Бронирования" : "Админ");
                 return h("button", { key: name, className: "tab " + (tab === name ? "active" : ""), onClick: function () { switchTab(name); } }, label);
               })
             ),
-            h("button", { className: "btn", disabled: busy, onClick: function () { tab === "admin" ? loadAdmin() : Promise.allSettled([loadCars(), loadRentals()]); } }, "Refresh")
+            h("button", { className: "btn", disabled: busy, onClick: function () { tab === "admin" ? loadAdmin() : Promise.allSettled([loadCars(), loadRentals()]); } }, "Обновить")
           ),
           tab === "cars" && h("section", null,
             h("div", { className: "filters" },
-              h("input", { className: "field", placeholder: "Search by brand, model, plate or type", value: query, onChange: function (ev) { setQuery(ev.target.value); } }),
+              h("input", { className: "field", placeholder: "Поиск по марке, модели, номеру или типу", value: query, onChange: function (ev) { setQuery(ev.target.value); } }),
               h("label", { className: "toggle" },
                 h("input", { type: "checkbox", checked: showAll, onChange: function (ev) { setShowAll(ev.target.checked); loadCars(ev.target.checked).catch(function (err) { setError(err.message); }); } }),
-                "Show unavailable"
+                "Показать занятые"
               )
             ),
             filteredCars.length ? h("div", { className: "grid" }, filteredCars.map(function (car) {
@@ -701,22 +715,22 @@ PAGE = Template(
                     h("h3", null, car.brand + " " + car.model),
                     h("div", { className: "muted" }, car.registrationNumber)
                   ),
-                  h("span", { className: car.availability ? "pill good" : "pill warn" }, car.availability ? "Available" : "Busy")
+                  h("span", { className: car.availability ? "pill good" : "pill warn" }, car.availability ? "Доступна" : "Занята")
                 ),
                 h("div", { className: "meta" },
                   h("span", { className: "pill" }, car.type),
-                  h("span", { className: "pill" }, String(car.power || 0) + " hp")
+                  h("span", { className: "pill" }, String(car.power || 0) + " л.с.")
                 ),
                 h("div", { className: "row" },
-                  h("span", { className: "price" }, money(car.price) + " / day"),
-                  h("button", { className: "btn primary", disabled: busy || !car.availability || !days, onClick: function () { rent(car); } }, "Book and pay")
+                  h("span", { className: "price" }, money(car.price) + " / день"),
+                  h("button", { className: "btn primary", disabled: busy || !car.availability || !days, onClick: function () { rent(car); } }, busy ? "Подождите..." : (!car.availability ? "Занята" : "Забронировать и оплатить"))
                 ),
                 h("div", { className: "ticket" },
-                  h("strong", null, days ? money(total) : "Choose dates"),
-                  h("div", { className: "mini" }, days ? String(days) + " day booking, payment is created automatically" : "dateTo must be later than dateFrom")
+                  h("strong", null, days ? money(total) : "Выберите даты"),
+                  h("div", { className: "mini" }, days ? "Период: " + String(days) + " дн. Платеж создается автоматически." : "Дата окончания должна быть позже даты начала.")
                 )
               );
-            })) : h("div", { className: "empty" }, "No cars match the selected filters.")
+            })) : h("div", { className: "empty" }, "По выбранным фильтрам автомобилей нет.")
           ),
           tab === "rentals" && h("section", null,
             rentals.length ? h("div", { className: "grid" }, rentals.map(function (rental) {
@@ -728,62 +742,62 @@ PAGE = Template(
                     h("h3", null, carName),
                     h("div", { className: "muted" }, rental.dateFrom + " - " + rental.dateTo)
                   ),
-                  h("span", { className: statusClass(rental.status) }, rental.status)
+                  h("span", { className: statusClass(rental.status) }, statusText(rental.status))
                 ),
                 h("div", { className: "ticket" },
-                  h("strong", null, "Payment: " + (payment.status || "UNKNOWN")),
-                  h("div", { className: "mini" }, money(payment.price || 0) + " / " + (payment.paymentUid || "payment pending"))
+                  h("strong", null, "Платеж: " + statusText(payment.status)),
+                  h("div", { className: "mini" }, money(payment.price || 0))
                 ),
                 h("div", { className: "row", style: { marginTop: "18px" } },
-                  h("button", { className: "btn", disabled: busy || rental.status !== "IN_PROGRESS", onClick: function () { finishRental(rental); } }, "Finish"),
-                  h("button", { className: "btn danger", disabled: busy || rental.status === "CANCELED", onClick: function () { cancelRental(rental); } }, "Cancel")
+                  h("button", { className: "btn", disabled: busy || rental.status !== "IN_PROGRESS", onClick: function () { finishRental(rental); } }, "Завершить"),
+                  h("button", { className: "btn danger", disabled: busy || rental.status === "CANCELED", onClick: function () { cancelRental(rental); } }, "Отменить")
                 )
               );
-            })) : h("div", { className: "empty" }, "You do not have rentals yet.")
+            })) : h("div", { className: "empty" }, "У вас пока нет бронирований.")
           ),
           tab === "admin" && h("section", { className: "panel" },
             h("div", null,
-              h("div", { className: "section-title" }, h("h3", null, "Statistics report")),
+              h("div", { className: "section-title" }, h("h3", null, "Отчет по статистике")),
               h("div", { className: "summary-grid" },
-                h("div", { className: "metric" }, h("span", null, "Total events"), h("strong", null, stats ? stats.totalEvents : 0)),
-                h("div", { className: "metric" }, h("span", null, "Tracked actions"), h("strong", null, stats ? Object.keys(stats.actions || {}).length : 0)),
-                h("div", { className: "metric" }, h("span", null, "Active users in report"), h("strong", null, stats ? Object.keys(stats.users || {}).length : 0))
+                h("div", { className: "metric" }, h("span", null, "Всего событий"), h("strong", null, stats ? stats.totalEvents : 0)),
+                h("div", { className: "metric" }, h("span", null, "Типов действий"), h("strong", null, stats ? Object.keys(stats.actions || {}).length : 0)),
+                h("div", { className: "metric" }, h("span", null, "Пользователей в отчете"), h("strong", null, stats ? Object.keys(stats.users || {}).length : 0))
               )
             ),
             h("div", null,
-              h("div", { className: "section-title" }, h("h3", null, "Create user")),
+              h("div", { className: "section-title" }, h("h3", null, "Создать пользователя")),
               h("form", { className: "form", onSubmit: addUser },
-                h("label", null, "Username", h("input", { name: "username", placeholder: "new.user", required: true })),
+                h("label", null, "Логин", h("input", { name: "username", placeholder: "new.user", required: true })),
                 h("label", null, "Email", h("input", { name: "email", type: "email", placeholder: "user@example.com", required: true })),
-                h("label", null, "Full name", h("input", { name: "fullName", placeholder: "New User" })),
-                h("label", null, "Password", h("input", { name: "password", type: "password", placeholder: "Temporary password", required: true })),
+                h("label", null, "Имя", h("input", { name: "fullName", placeholder: "Иван Иванов" })),
+                h("label", null, "Пароль", h("input", { name: "password", type: "password", placeholder: "Временный пароль", required: true })),
                 h("div", { className: "wide row" },
-                  h("span", { className: "muted" }, "New accounts receive the User role by default."),
-                  h("button", { className: "btn primary", disabled: busy }, busy ? "Creating..." : "Create user")
+                  h("span", { className: "muted" }, "Новые аккаунты получают роль Пользователь по умолчанию."),
+                  h("button", { className: "btn primary", disabled: busy }, busy ? "Создаем..." : "Создать пользователя")
                 )
               )
             ),
             h("div", null,
-              h("div", { className: "section-title" }, h("h3", null, "Users")),
+              h("div", { className: "section-title" }, h("h3", null, "Пользователи")),
               h("div", { className: "table-wrap" },
                 h("table", null,
-                  h("thead", null, h("tr", null, ["Username", "Email", "Full name", "Role"].map(function (name) { return h("th", { key: name }, name); }))),
+                  h("thead", null, h("tr", null, ["Логин", "Email", "Имя", "Роль"].map(function (name) { return h("th", { key: name }, name); }))),
                   h("tbody", null, users.map(function (user) {
                     return h("tr", { key: user.username },
                       h("td", null, user.username),
                       h("td", null, user.email),
                       h("td", null, user.fullName),
-                      h("td", null, h("span", { className: user.role === "Admin" ? "pill good" : "pill" }, user.role))
+                      h("td", null, h("span", { className: user.role === "Admin" ? "pill good" : "pill" }, user.role === "Admin" ? "Админ" : "Пользователь"))
                     );
                   }))
                 )
               )
             ),
             h("div", null,
-              h("div", { className: "section-title" }, h("h3", null, "Recent events")),
+              h("div", { className: "section-title" }, h("h3", null, "Последние события")),
               h("div", { className: "table-wrap" },
                 h("table", null,
-                  h("thead", null, h("tr", null, ["Time", "User", "Action", "Payload"].map(function (name) { return h("th", { key: name }, name); }))),
+                  h("thead", null, h("tr", null, ["Время", "Пользователь", "Действие", "Данные"].map(function (name) { return h("th", { key: name }, name); }))),
                   h("tbody", null, events.map(function (event) {
                     return h("tr", { key: event.id },
                       h("td", null, new Date(event.createdAt).toLocaleString()),

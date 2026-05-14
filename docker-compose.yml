@@ -24,7 +24,7 @@ services:
     command: ["bash", "/init-databases.sh"]
 
   kafka:
-    image: bitnami/kafka:3.7
+    image: bitnamilegacy/kafka:3.7.0
     container_name: kafka
     restart: on-failure
     environment:

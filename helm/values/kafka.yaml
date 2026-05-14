@@ -1,8 +1,8 @@
 fullnameOverride: kafka
 
 image:
-  repository: "bitnami/kafka"
-  tag: "3.7"
+  repository: "bitnamilegacy/kafka"
+  tag: "3.7.0"
   pullPolicy: IfNotPresent
 
 service:

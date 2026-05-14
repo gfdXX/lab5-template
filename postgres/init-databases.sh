@@ -16,9 +16,13 @@ psql -v ON_ERROR_STOP=1 -h postgres -U program -d postgres <<-EOSQL
     CREATE DATABASE cars;
     CREATE DATABASE rentals;
     CREATE DATABASE payments;
+    CREATE DATABASE identity;
+    CREATE DATABASE statistics;
     GRANT ALL PRIVILEGES ON DATABASE cars TO program;
     GRANT ALL PRIVILEGES ON DATABASE rentals TO program;
     GRANT ALL PRIVILEGES ON DATABASE payments TO program;
+    GRANT ALL PRIVILEGES ON DATABASE identity TO program;
+    GRANT ALL PRIVILEGES ON DATABASE statistics TO program;
 EOSQL
 
 echo "Databases created successfully"
@@ -86,4 +90,3 @@ EOSQL
 
 echo "Payments schema created successfully"
 echo "Database initialization completed!"
-

@@ -39,10 +39,14 @@ spec:
         - name: {{ .name }}
           value: {{ .value | quote }}
         {{- end }}
+        {{- if .Values.livenessProbe }}
         livenessProbe:
           {{- toYaml .Values.livenessProbe | nindent 10 }}
+        {{- end }}
+        {{- if .Values.readinessProbe }}
         readinessProbe:
           {{- toYaml .Values.readinessProbe | nindent 10 }}
+        {{- end }}
         resources:
           {{- toYaml .Values.resources | nindent 10 }}
 

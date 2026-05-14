@@ -20,9 +20,9 @@ env:
   - name: OIDC_CLIENT_SECRET
     value: "rsoi-lab5-ci-secret"
   - name: OIDC_TOKEN_URL
-    value: "http://gateway-service:8080/oauth/token"
-  - name: OIDC_JWKS
-    value: '{"keys":[{"kty":"oct","kid":"local-ci","k":"cnNvaS1sYWI1LWNpLXNlY3JldA"}]}'
+    value: "http://identity-service:8090/oauth/token"
+  - name: OIDC_JWKS_URL
+    value: "http://identity-service:8090/oauth/jwks"
   - name: OIDC_SCOPE
     value: "openid profile email"
 

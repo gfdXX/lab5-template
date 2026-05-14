@@ -72,6 +72,71 @@
 4. Используйте токен во всех запросах, например:  
    `curl -H "Authorization: Bearer <token>" "http://localhost:8080/api/v1/cars?page=1&size=10"`.
 
+## Курсовая работа
+
+В проект добавлены компоненты для курсовой:
+
+* `identity-service` — собственный Identity Provider с OpenID Connect Authorization Code Flow, JWKS, JWT и ролями `Admin` / `User`.
+* `ui-service` — Single Page Application на React, доступная локально на `http://localhost:3000`.
+* `statistics-service` — сервис статистики, который читает события из Kafka и отдаёт admin-only отчёты.
+* `kafka` — брокер событий для передачи действий пользователя в сервис статистики.
+
+Администратор создаётся автоматически при старте Identity Provider:
+
+* username: `admin`
+* password: `admin`
+* role: `Admin`
+
+Для совместимости с Newman также создаётся пользователь `salgikda@gmail.com` с ролью `User`.
+
+### OIDC endpoints
+
+* `GET /oauth/authorize` — форма входа и выдача authorization code.
+* `POST /oauth/token` — обмен authorization code или password grant на JWT.
+* `GET /.well-known/openid-configuration` — metadata OpenID Connect.
+* `GET /oauth/jwks` — набор ключей для проверки JWT.
+
+### Admin API
+
+Все методы ниже требуют JWT пользователя с ролью `Admin`:
+
+* `GET /api/v1/users`
+* `POST /api/v1/users`
+* `GET /api/v1/statistics/summary`
+* `GET /api/v1/statistics/events`
+
+### Локальный запуск курсовой
+
+```bash
+docker compose up --build
+```
+
+После старта:
+
+* UI: `http://localhost:3000`
+* Gateway API: `http://localhost:8080`
+* Identity Provider: `http://localhost:8090`
+* Statistics API: `http://localhost:8040`
+
+### Kubernetes
+
+Для деплоя используются те же универсальные Helm charts. Отличия между сервисами задаются через файлы в `helm/values`:
+
+* `identity-service.yaml`
+* `statistics-service.yaml`
+* `ui-service.yaml`
+* `kafka.yaml`
+* `cars-service.yaml`
+* `rental-service.yaml`
+* `payment-service.yaml`
+* `gateway-service.yaml`
+
+Для публикации наружу подготовлены Ingress rules:
+
+* `/` → UI
+* `/api` и `/manage` → Gateway
+* `/oauth` и `/.well-known` → Identity Provider
+
 ### Прием задания
 
 1. При получении задания у вас создается fork этого репозитория для вашего пользователя.

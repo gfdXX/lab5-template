@@ -33,6 +33,15 @@ class AuthenticatedUser(BaseModel):
     token: str
     claims: Dict[str, Any]
 
+    @property
+    def roles(self) -> list[str]:
+        value = self.claims.get("roles") or self.claims.get("role") or []
+        if isinstance(value, str):
+            return [value]
+        if isinstance(value, list):
+            return [str(item) for item in value]
+        return []
+
 
 def _load_jwks(settings: AuthSettings) -> Dict[str, Any]:
     """Load JWKS either from env, direct URL or via OIDC discovery."""
@@ -184,6 +193,13 @@ def get_current_user(authorization: str = Header(None)) -> AuthenticatedUser:
 def auth_header_for(token: str) -> Dict[str, str]:
     """Build Authorization header for downstream requests."""
     return {"Authorization": f"Bearer {token}"}
+
+
+def require_role(user: AuthenticatedUser, role: str) -> None:
+    """Raise 403 unless the authenticated user has the required role."""
+    expected = role.lower()
+    if expected not in [item.lower() for item in user.roles]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
 
 def reset_auth_cache():

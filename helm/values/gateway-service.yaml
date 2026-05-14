@@ -15,6 +15,14 @@ env:
     value: "http://rental-service:8060"
   - name: PAYMENT_SERVICE_URL
     value: "http://payment-service:8050"
+  - name: IDENTITY_SERVICE_URL
+    value: "http://identity-service:8090"
+  - name: STATISTICS_SERVICE_URL
+    value: "http://statistics-service:8040"
+  - name: KAFKA_BOOTSTRAP_SERVERS
+    value: "kafka:9092"
+  - name: STATS_TOPIC
+    value: "car-rental-events"
   - name: OIDC_ISSUER
     value: "http://localhost:8080"
   - name: OIDC_AUDIENCE
@@ -24,13 +32,13 @@ env:
   - name: OIDC_CLIENT_SECRET
     value: "rsoi-lab5-ci-secret"
   - name: OIDC_TOKEN_URL
-    value: "http://gateway-service:8080/oauth/token"
-  - name: OIDC_JWKS
-    value: '{"keys":[{"kty":"oct","kid":"local-ci","k":"cnNvaS1sYWI1LWNpLXNlY3JldA"}]}'
+    value: "http://identity-service:8090/oauth/token"
+  - name: OIDC_JWKS_URL
+    value: "http://identity-service:8090/oauth/jwks"
   - name: OIDC_SCOPE
     value: "openid profile email"
-  - name: OIDC_ENABLE_LOCAL_TOKEN_ISSUER
-    value: "true"
+  - name: OIDC_REDIRECT_URI
+    value: "http://localhost:3000/callback"
 
 command:
   - uvicorn
@@ -43,11 +51,12 @@ command:
 ingress:
   enabled: true
   className: "nginx"
-  annotations:
-    nginx.ingress.kubernetes.io/rewrite-target: /
+  annotations: {}
   hosts:
-    - host: ""  # Will be set based on cluster ingress
+    - host: ""
       paths:
-        - path: /
+        - path: /api
+          pathType: Prefix
+        - path: /manage
           pathType: Prefix
 

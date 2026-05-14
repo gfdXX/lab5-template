@@ -24,10 +24,14 @@ data:
         SELECT 'CREATE DATABASE cars' WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'cars')\gexec
         SELECT 'CREATE DATABASE rentals' WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'rentals')\gexec
         SELECT 'CREATE DATABASE payments' WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'payments')\gexec
+        SELECT 'CREATE DATABASE identity' WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'identity')\gexec
+        SELECT 'CREATE DATABASE statistics' WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'statistics')\gexec
 
         GRANT ALL PRIVILEGES ON DATABASE cars TO {{ .Values.postgres.user }};
         GRANT ALL PRIVILEGES ON DATABASE rentals TO {{ .Values.postgres.user }};
         GRANT ALL PRIVILEGES ON DATABASE payments TO {{ .Values.postgres.user }};
+        GRANT ALL PRIVILEGES ON DATABASE identity TO {{ .Values.postgres.user }};
+        GRANT ALL PRIVILEGES ON DATABASE statistics TO {{ .Values.postgres.user }};
     EOSQL
 
     echo "Databases created successfully"

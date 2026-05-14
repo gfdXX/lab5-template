@@ -15,12 +15,8 @@ import queue
 import psycopg2
 from enum import Enum
 from threading import Lock
-from services.auth import (
-    AuthenticatedUser,
-    auth_header_for,
-    get_current_user,
-    get_settings,
-)
+from services.auth import AuthenticatedUser, auth_header_for, get_current_user, get_settings, require_role
+from services.events import publish_event
 
 # FastAPI app
 app = FastAPI(title="Gateway Service", version="1.0.0")
@@ -37,6 +33,8 @@ app.add_middleware(
 CARS_SERVICE_URL = os.getenv("CARS_SERVICE_URL", "http://cars-service:8070")
 RENTAL_SERVICE_URL = os.getenv("RENTAL_SERVICE_URL", "http://rental-service:8060")
 PAYMENT_SERVICE_URL = os.getenv("PAYMENT_SERVICE_URL", "http://payment-service:8050")
+IDENTITY_SERVICE_URL = os.getenv("IDENTITY_SERVICE_URL", "http://identity-service:8090")
+STATISTICS_SERVICE_URL = os.getenv("STATISTICS_SERVICE_URL", "http://statistics-service:8040")
 PAYMENT_DATABASE_URL = os.getenv("PAYMENT_DATABASE_URL", "postgresql://program:test@postgres:5432/payments")
 AUTH_SETTINGS = get_settings()
 
@@ -340,100 +338,59 @@ async def health_check():
     return {"status": "OK"}
 
 
-def _local_token_response(username: str, scope: Optional[str] = None):
-    if os.getenv("OIDC_ENABLE_LOCAL_TOKEN_ISSUER", "").lower() not in ("1", "true", "yes"):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
-
-    try:
-        jwks = json.loads(AUTH_SETTINGS.jwks_json or "{}")
-        jwk = next(key for key in jwks.get("keys", []) if key.get("kty") == "oct")
-        secret = base64.urlsafe_b64decode(jwk["k"] + "=" * (-len(jwk["k"]) % 4))
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail="Local token issuer is not configured") from exc
-
-    now = int(time.time())
-    payload = {
-        "sub": username,
-        "preferred_username": username,
-        "email": username,
-        "iss": AUTH_SETTINGS.issuer,
-        "aud": AUTH_SETTINGS.audience,
-        "iat": now,
-        "exp": now + 3600,
-        "scope": scope or AUTH_SETTINGS.scope,
-    }
-    access_token = jwt.encode(payload, secret, algorithm="HS256", headers={"kid": jwk.get("kid", "local-ci")})
-    return {
-        "access_token": access_token,
-        "token_type": "Bearer",
-        "expires_in": 3600,
-        "scope": payload["scope"],
-    }
-
-
 @app.post("/oauth/token")
 async def local_oauth_token(
-    username: str = Form(...),
-    password: str = Form(...),
-    scope: Optional[str] = Form(None),
+    grant_type: str = Form(...),
+    client_id: str = Form(...),
+    client_secret: str = Form(...),
+    code: Optional[str] = Form(None),
+    redirect_uri: Optional[str] = Form(None),
+    username: Optional[str] = Form(None),
+    password: Optional[str] = Form(None),
+    scope: str = Form("openid profile email"),
 ):
-    """Local Resource Owner Password token endpoint for CI/Postman tests."""
-    return _local_token_response(username=username, scope=scope)
+    """Compatibility token endpoint used by Newman through gateway port-forward."""
+    data = {
+        "grant_type": grant_type,
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "scope": scope,
+    }
+    if code:
+        data["code"] = code
+    if redirect_uri:
+        data["redirect_uri"] = redirect_uri
+    if username:
+        data["username"] = username
+    if password:
+        data["password"] = password
+    response = requests.post(f"{IDENTITY_SERVICE_URL}/oauth/token", data=data, timeout=10)
+    if response.status_code >= 400:
+        raise HTTPException(status_code=response.status_code, detail=response.text)
+    return response.json()
 
 
 @app.post("/api/v1/authorize")
 async def authorize(auth_request: AuthRequest):
-    """Exchange user credentials for tokens using Resource Owner Password flow."""
-    token_url = AUTH_SETTINGS.token_url
-    if not token_url:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="OIDC token endpoint is not configured",
-        )
-
-    # Auth0 requires password-realm grant type when no default connection is configured.
-    # For other providers, the classic password grant with a connection parameter still works.
-    connection_name = AUTH_SETTINGS.realm or "Username-Password-Authentication"
-    grant_type = "password"
-    use_realm = "auth0.com" in token_url or AUTH_SETTINGS.realm is not None
-
-    data = {
-        "grant_type": grant_type,
-        "client_id": AUTH_SETTINGS.client_id,
-        "client_secret": AUTH_SETTINGS.client_secret,
-        "username": auth_request.username,
-        "password": auth_request.password,
-        "scope": auth_request.scope or AUTH_SETTINGS.scope,
-    }
-
-    if use_realm:
-        data["grant_type"] = "http://auth0.com/oauth/grant-type/password-realm"
-        data["realm"] = connection_name
-    else:
-        data["connection"] = connection_name
-
-    # Add audience if configured (required for Auth0 to return JWT access_token)
-    if AUTH_SETTINGS.audience:
-        data["audience"] = AUTH_SETTINGS.audience
-
-    try:
-        response = requests.post(token_url, data=data, timeout=10)
-    except requests.RequestException as exc:
-        raise HTTPException(status_code=503, detail="Identity provider unavailable") from exc
-
+    """Backward-compatible password token exchange for scripts."""
+    response = requests.post(
+        f"{IDENTITY_SERVICE_URL}/oauth/token",
+        data={
+            "grant_type": "password",
+            "client_id": AUTH_SETTINGS.client_id,
+            "client_secret": AUTH_SETTINGS.client_secret,
+            "username": auth_request.username,
+            "password": auth_request.password,
+            "scope": auth_request.scope or AUTH_SETTINGS.scope,
+        },
+        timeout=10,
+    )
     if response.status_code >= 400:
-        error_detail = response.text
-        try:
-            error_json = response.json()
-            error_detail = error_json.get("error_description", error_json.get("error", "Authorization failed"))
-        except:
-            pass
-        raise HTTPException(status_code=response.status_code, detail=error_detail)
-
+        raise HTTPException(status_code=response.status_code, detail=response.text)
     return response.json()
 
 @app.get("/api/v1/callback")
-async def callback(code: Optional[str] = None, state: Optional[str] = None):
+async def callback(code: Optional[str] = None, state: Optional[str] = None, redirect_uri: Optional[str] = None):
     """
     Optional callback handler for Authorization Code flow.
     When code is provided, it is exchanged for tokens; otherwise a simple OK response is returned.
@@ -441,23 +398,18 @@ async def callback(code: Optional[str] = None, state: Optional[str] = None):
     if not code:
         return {"status": "ok"}
 
-    token_url = AUTH_SETTINGS.token_url
-    if not token_url:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="OIDC token endpoint is not configured",
-        )
-
-    data = {
-        "grant_type": "authorization_code",
-        "code": code,
-        "redirect_uri": AUTH_SETTINGS.redirect_uri,
-        "client_id": AUTH_SETTINGS.client_id,
-        "client_secret": AUTH_SETTINGS.client_secret,
-    }
-
     try:
-        response = requests.post(token_url, data=data, timeout=10)
+        response = requests.post(
+            f"{IDENTITY_SERVICE_URL}/oauth/token",
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": redirect_uri or AUTH_SETTINGS.redirect_uri,
+                "client_id": AUTH_SETTINGS.client_id,
+                "client_secret": AUTH_SETTINGS.client_secret,
+            },
+            timeout=10,
+        )
     except requests.RequestException as exc:
         raise HTTPException(status_code=503, detail="Identity provider unavailable") from exc
 
@@ -822,6 +774,8 @@ async def create_rental(
         
         rental_info = rental_response.json()
         
+        publish_event("rental_created", user.username, {"rentalUid": rental_info["rentalUid"], "carUid": rental_info["carUid"], "price": total_price})
+
         # Step 5: Return aggregated response
         return {
             "rentalUid": rental_info["rentalUid"],
@@ -872,6 +826,7 @@ async def finish_rental(rental_uid: str, user: AuthenticatedUser = Depends(get_c
         )
         if finish_response.status_code == 204:
             from fastapi import Response
+            publish_event("rental_finished", user.username, {"rentalUid": rental_uid, "carUid": car_uid})
             return Response(status_code=204)
         elif finish_response.status_code == 404:
             raise HTTPException(status_code=404, detail="Rental not found")
@@ -959,9 +914,63 @@ async def cancel_rental(rental_uid: str, user: AuthenticatedUser = Depends(get_c
             )
         
         from fastapi import Response
+        publish_event("rental_canceled", user.username, {"rentalUid": rental_uid, "carUid": car_uid, "paymentUid": payment_uid})
         return Response(status_code=204)
     except requests.RequestException:
         raise HTTPException(status_code=503, detail="Rental service unavailable")
+
+
+@app.get("/api/v1/statistics/summary")
+async def get_statistics_summary(user: AuthenticatedUser = Depends(get_current_user)):
+    require_role(user, "Admin")
+    response = requests.get(
+        f"{STATISTICS_SERVICE_URL}/api/v1/statistics/summary",
+        headers=auth_header_for(user.token),
+        timeout=5,
+    )
+    if response.status_code >= 400:
+        raise HTTPException(status_code=response.status_code, detail=response.text)
+    return response.json()
+
+
+@app.get("/api/v1/statistics/events")
+async def get_statistics_events(user: AuthenticatedUser = Depends(get_current_user)):
+    require_role(user, "Admin")
+    response = requests.get(
+        f"{STATISTICS_SERVICE_URL}/api/v1/statistics/events",
+        headers=auth_header_for(user.token),
+        timeout=5,
+    )
+    if response.status_code >= 400:
+        raise HTTPException(status_code=response.status_code, detail=response.text)
+    return response.json()
+
+
+@app.get("/api/v1/users")
+async def list_users(user: AuthenticatedUser = Depends(get_current_user)):
+    require_role(user, "Admin")
+    response = requests.get(
+        f"{IDENTITY_SERVICE_URL}/api/v1/users",
+        headers=auth_header_for(user.token),
+        timeout=5,
+    )
+    if response.status_code >= 400:
+        raise HTTPException(status_code=response.status_code, detail=response.text)
+    return response.json()
+
+
+@app.post("/api/v1/users")
+async def create_user(payload: dict, user: AuthenticatedUser = Depends(get_current_user)):
+    require_role(user, "Admin")
+    response = requests.post(
+        f"{IDENTITY_SERVICE_URL}/api/v1/users",
+        json=payload,
+        headers=auth_header_for(user.token),
+        timeout=5,
+    )
+    if response.status_code >= 400:
+        raise HTTPException(status_code=response.status_code, detail=response.text)
+    return response.json()
 
 if __name__ == "__main__":
     import uvicorn

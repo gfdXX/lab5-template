@@ -70,6 +70,9 @@ jobs:
           RENTAL_IMAGE=${COMPOSE_PROJECT_NAME}-rental-service:latest
           PAYMENT_IMAGE=${COMPOSE_PROJECT_NAME}-payment-service:latest
           GATEWAY_IMAGE=${COMPOSE_PROJECT_NAME}-gateway-service:latest
+          IDENTITY_IMAGE=${COMPOSE_PROJECT_NAME}-identity-service:latest
+          STATISTICS_IMAGE=${COMPOSE_PROJECT_NAME}-statistics-service:latest
+          UI_IMAGE=${COMPOSE_PROJECT_NAME}-ui-service:latest
 
           # Tag and push cars-service
           docker tag "$CARS_IMAGE" "$DOCKER_IMAGE_BASE-cars:latest"
@@ -94,6 +97,21 @@ jobs:
           docker tag "$GATEWAY_IMAGE" "$DOCKER_IMAGE_BASE-gateway:$IMAGE_TAG"
           docker push "$DOCKER_IMAGE_BASE-gateway:latest"
           docker push "$DOCKER_IMAGE_BASE-gateway:$IMAGE_TAG"
+
+          docker tag "$IDENTITY_IMAGE" "$DOCKER_IMAGE_BASE-identity:latest"
+          docker tag "$IDENTITY_IMAGE" "$DOCKER_IMAGE_BASE-identity:$IMAGE_TAG"
+          docker push "$DOCKER_IMAGE_BASE-identity:latest"
+          docker push "$DOCKER_IMAGE_BASE-identity:$IMAGE_TAG"
+
+          docker tag "$STATISTICS_IMAGE" "$DOCKER_IMAGE_BASE-statistics:latest"
+          docker tag "$STATISTICS_IMAGE" "$DOCKER_IMAGE_BASE-statistics:$IMAGE_TAG"
+          docker push "$DOCKER_IMAGE_BASE-statistics:latest"
+          docker push "$DOCKER_IMAGE_BASE-statistics:$IMAGE_TAG"
+
+          docker tag "$UI_IMAGE" "$DOCKER_IMAGE_BASE-ui:latest"
+          docker tag "$UI_IMAGE" "$DOCKER_IMAGE_BASE-ui:$IMAGE_TAG"
+          docker push "$DOCKER_IMAGE_BASE-ui:latest"
+          docker push "$DOCKER_IMAGE_BASE-ui:$IMAGE_TAG"
 
   deploy:
     name: Deploy to Kubernetes
@@ -146,6 +164,24 @@ jobs:
           # Wait for init job to complete
           kubectl wait --for=condition=complete job/postgres-init -n test --timeout=5m || true
 
+      - name: Deploy Kafka
+        run: |
+          export KUBECONFIG=./kubeconfig
+          helm upgrade --install kafka ./helm/service-chart \
+            --namespace test \
+            -f ./helm/values/kafka.yaml \
+            --wait
+
+      - name: Deploy Identity Service
+        run: |
+          export KUBECONFIG=./kubeconfig
+          helm upgrade --install identity-service ./helm/service-chart \
+            --namespace test \
+            -f ./helm/values/identity-service.yaml \
+            --set image.repository=${{ secrets.DOCKER_USERNAME }}/car-rental-service-identity \
+            --set image.tag=${GITHUB_SHA} \
+            --wait
+
       - name: Deploy Cars Service
         run: |
           export KUBECONFIG=./kubeconfig
@@ -176,6 +212,16 @@ jobs:
             --set image.tag=${GITHUB_SHA} \
             --wait
 
+      - name: Deploy Statistics Service
+        run: |
+          export KUBECONFIG=./kubeconfig
+          helm upgrade --install statistics-service ./helm/service-chart \
+            --namespace test \
+            -f ./helm/values/statistics-service.yaml \
+            --set image.repository=${{ secrets.DOCKER_USERNAME }}/car-rental-service-statistics \
+            --set image.tag=${GITHUB_SHA} \
+            --wait
+
       - name: Deploy Gateway Service
         run: |
           export KUBECONFIG=./kubeconfig
@@ -183,6 +229,16 @@ jobs:
             --namespace test \
             -f ./helm/values/gateway-service.yaml \
             --set image.repository=${{ secrets.DOCKER_USERNAME }}/car-rental-service-gateway \
+            --set image.tag=${GITHUB_SHA} \
+            --wait
+
+      - name: Deploy UI Service
+        run: |
+          export KUBECONFIG=./kubeconfig
+          helm upgrade --install ui-service ./helm/service-chart \
+            --namespace test \
+            -f ./helm/values/ui-service.yaml \
+            --set image.repository=${{ secrets.DOCKER_USERNAME }}/car-rental-service-ui \
             --set image.tag=${GITHUB_SHA} \
             --wait
 
@@ -197,7 +253,10 @@ jobs:
           kubectl rollout status deployment/cars-service -n test --timeout=5m
           kubectl rollout status deployment/rental-service -n test --timeout=5m
           kubectl rollout status deployment/payment-service -n test --timeout=5m
+          kubectl rollout status deployment/identity-service -n test --timeout=5m
+          kubectl rollout status deployment/statistics-service -n test --timeout=5m
           kubectl rollout status deployment/gateway-service -n test --timeout=5m
+          kubectl rollout status deployment/ui-service -n test --timeout=5m
 
       - name: Warm up gateway
         run: |

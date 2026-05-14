@@ -1,0 +1,57 @@
+fullnameOverride: identity-service
+
+image:
+  repository: ""
+  tag: "latest"
+  pullPolicy: Always
+
+service:
+  port: 8090
+
+env:
+  - name: DATABASE_URL
+    value: "postgresql://program:test@postgres:5432/identity"
+  - name: OIDC_ISSUER
+    value: "http://localhost:8080"
+  - name: OIDC_AUDIENCE
+    value: "rsoi-lab5-ci"
+  - name: OIDC_CLIENT_ID
+    value: "rsoi-lab5-ci"
+  - name: OIDC_CLIENT_SECRET
+    value: "rsoi-lab5-ci-secret"
+  - name: OIDC_REDIRECT_URI
+    value: "http://localhost:3000/callback"
+  - name: OIDC_SIGNING_SECRET
+    value: "rsoi-coursework-signing-secret"
+  - name: ADMIN_USERNAME
+    value: "admin"
+  - name: ADMIN_EMAIL
+    value: "admin@example.com"
+  - name: ADMIN_PASSWORD
+    value: "admin"
+  - name: DEMO_USERNAME
+    value: "salgikda@gmail.com"
+  - name: DEMO_EMAIL
+    value: "salgikda@gmail.com"
+  - name: DEMO_PASSWORD
+    value: "6UwQQYX!djfqXSd"
+
+command:
+  - uvicorn
+  - services.identity_service.main:app
+  - --host
+  - 0.0.0.0
+  - --port
+  - "8090"
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations: {}
+  hosts:
+    - host: ""
+      paths:
+        - path: /oauth
+          pathType: Prefix
+        - path: /.well-known
+          pathType: Prefix

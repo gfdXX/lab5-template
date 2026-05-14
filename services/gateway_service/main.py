@@ -29,6 +29,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.middleware("http")
+async def log_requests(request, call_next):
+    start = time.time()
+    response = await call_next(request)
+    elapsed_ms = int((time.time() - start) * 1000)
+    print(f"gateway-service {request.method} {request.url.path} -> {response.status_code} ({elapsed_ms} ms)")
+    return response
+
+
 # Service URLs
 CARS_SERVICE_URL = os.getenv("CARS_SERVICE_URL", "http://cars-service:8070")
 RENTAL_SERVICE_URL = os.getenv("RENTAL_SERVICE_URL", "http://rental-service:8060")
@@ -249,6 +259,12 @@ class AuthRequest(BaseModel):
     password: str
     scope: Optional[str] = None
 
+class RegisterRequest(BaseModel):
+    username: str
+    email: str
+    password: str
+    fullName: Optional[str] = None
+
 class CarResponse(BaseModel):
     carUid: str
     brand: str
@@ -388,6 +404,32 @@ async def authorize(auth_request: AuthRequest):
     if response.status_code >= 400:
         raise HTTPException(status_code=response.status_code, detail=response.text)
     return response.json()
+
+
+@app.post("/api/v1/register", status_code=201)
+async def register(payload: RegisterRequest):
+    """Public user registration through the Identity Provider."""
+    payload_data = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
+    try:
+        response = requests.post(
+            f"{IDENTITY_SERVICE_URL}/api/v1/register",
+            json=payload_data,
+            timeout=5,
+        )
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=503, detail="Identity provider unavailable") from exc
+
+    if response.status_code >= 400:
+        try:
+            detail = response.json().get("detail", response.text)
+        except ValueError:
+            detail = response.text
+        raise HTTPException(status_code=response.status_code, detail=detail)
+
+    user_data = response.json()
+    publish_event("user_registered", user_data.get("username", payload.username), {"email": user_data.get("email")})
+    return user_data
+
 
 @app.get("/api/v1/callback")
 async def callback(code: Optional[str] = None, state: Optional[str] = None, redirect_uri: Optional[str] = None):
@@ -704,6 +746,17 @@ async def create_rental(
                 raise HTTPException(status_code=400, detail="Invalid date format for dateTo")
         
         rental_days = (date_to - date_from).days
+        if rental_days <= 0:
+            try:
+                requests.patch(
+                    f"{CARS_SERVICE_URL}/api/v1/cars/{rental_request.carUid}/availability",
+                    params={"available": True},
+                    headers=auth_header_for(user.token),
+                    timeout=3
+                )
+            except:
+                pass
+            raise HTTPException(status_code=400, detail="dateTo must be later than dateFrom")
         total_price = car_data["price"] * rental_days
         
         # Step 3: Create payment with circuit breaker (rental service requires paymentUid)

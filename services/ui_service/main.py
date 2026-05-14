@@ -1,4 +1,5 @@
 import os
+import time
 from string import Template
 
 from fastapi import FastAPI
@@ -11,6 +12,15 @@ CLIENT_ID = os.getenv("OIDC_CLIENT_ID", "car-rental-ui")
 REDIRECT_URI = os.getenv("OIDC_REDIRECT_URI", "http://localhost:3000/callback")
 
 app = FastAPI(title="Car Rental UI", version="1.0.0")
+
+
+@app.middleware("http")
+async def log_requests(request, call_next):
+    start = time.time()
+    response = await call_next(request)
+    elapsed_ms = int((time.time() - start) * 1000)
+    print(f"ui-service {request.method} {request.url.path} -> {response.status_code} ({elapsed_ms} ms)")
+    return response
 
 
 PAGE = Template(
@@ -287,6 +297,36 @@ PAGE = Template(
     .login-box h3 { margin: 0 0 8px; font-size: 22px; }
     .login-box p { margin: 0 0 18px; color: var(--muted); line-height: 1.5; }
     .actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    .auth-toggle {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      padding: 5px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--soft);
+      margin-bottom: 16px;
+    }
+    .auth-toggle button {
+      border: 0;
+      background: transparent;
+      border-radius: 6px;
+      min-height: 36px;
+      color: var(--muted);
+      font-weight: 800;
+    }
+    .auth-toggle button.active { background: #fff; color: var(--blue-dark); box-shadow: 0 6px 18px rgba(21, 32, 51, .08); }
+    .auth-form { grid-template-columns: 1fr; margin-bottom: 14px; padding: 0; border: 0; background: transparent; }
+    .ticket {
+      margin-top: 12px;
+      padding: 12px;
+      border: 1px solid #d9e0ea;
+      border-radius: 8px;
+      background: #f7f9fc;
+      color: #344258;
+      line-height: 1.45;
+    }
+    .mini { font-size: 13px; color: var(--muted); }
     @media (max-width: 760px) {
       .topbar-inner { padding: 14px 16px; align-items: flex-start; }
       .intro { grid-template-columns: 1fr; align-items: start; }
@@ -338,6 +378,13 @@ PAGE = Template(
       return new Intl.NumberFormat("en-US", { style: "currency", currency: "RUB", maximumFractionDigits: 0 }).format(value || 0);
     }
 
+    function rentalDays(from, to) {
+      const start = new Date(from + "T00:00:00");
+      const end = new Date(to + "T00:00:00");
+      const days = Math.round((end - start) / 86400000);
+      return Number.isFinite(days) && days > 0 ? days : 0;
+    }
+
     function statusClass(status) {
       return status === "IN_PROGRESS" ? "pill good" : "pill warn";
     }
@@ -357,6 +404,7 @@ PAGE = Template(
       const [message, setMessage] = React.useState("");
       const [error, setError] = React.useState("");
       const [busy, setBusy] = React.useState(false);
+      const [authMode, setAuthMode] = React.useState("signin");
 
       const claims = token ? decodeToken(token) : {};
       const roles = (claims.roles || []).map(function (role) { return String(role).toLowerCase(); });
@@ -448,16 +496,48 @@ PAGE = Template(
         location.href = CONFIG.identityUrl + "/oauth/authorize?" + params.toString();
       }
 
+      async function register(ev) {
+        ev.preventDefault();
+        setBusy(true);
+        setError("");
+        setMessage("");
+        const form = new FormData(ev.currentTarget);
+        const payload = Object.fromEntries(form.entries());
+        try {
+          await fetch(CONFIG.apiBase + "/api/v1/register", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          }).then(function (res) {
+            return res.text().then(function (text) {
+              const data = text ? JSON.parse(text) : {};
+              if (!res.ok) throw new Error(data.detail || text || "Registration failed");
+              return data;
+            });
+          });
+          ev.currentTarget.reset();
+          setAuthMode("signin");
+          setMessage("Account created. Sign in through the Identity Provider with your username and password.");
+        } catch (err) {
+          setError(err.message);
+        } finally {
+          setBusy(false);
+        }
+      }
+
       async function rent(car) {
         setBusy(true);
         setError("");
         setMessage("");
         try {
-          await api("/api/v1/rental", {
+          const days = rentalDays(dateFrom, dateTo);
+          if (!days) throw new Error("Choose a valid date range.");
+          const booking = await api("/api/v1/rental", {
             method: "POST",
             body: JSON.stringify({ carUid: car.carUid, dateFrom: dateFrom, dateTo: dateTo })
           });
-          setMessage("Rental created for " + car.brand + " " + car.model + ".");
+          const payment = booking.payment || {};
+          setMessage("Booking paid: " + car.brand + " " + car.model + ", " + money(payment.price || car.price * days) + ". Payment status: " + (payment.status || "PAID") + ".");
           await loadCars();
           await loadRentals();
         } catch (err) {
@@ -548,10 +628,22 @@ PAGE = Template(
               h("p", null, "The application uses its own Identity Provider. Admin users can create accounts and view the Kafka-powered statistics report.")
             ),
             h("section", { className: "login-box" },
-              h("h3", null, "Secure sign in"),
-              h("p", null, "Continue through the Identity Provider to receive an OpenID Connect JWT for all API requests."),
+              h("div", { className: "auth-toggle" },
+                h("button", { className: authMode === "signin" ? "active" : "", onClick: function () { setAuthMode("signin"); setError(""); setMessage(""); } }, "Sign in"),
+                h("button", { className: authMode === "register" ? "active" : "", onClick: function () { setAuthMode("register"); setError(""); setMessage(""); } }, "Register")
+              ),
+              h("h3", null, authMode === "signin" ? "Secure sign in" : "Create an account"),
+              h("p", null, authMode === "signin" ? "Continue through the Identity Provider to receive an OpenID Connect JWT for all API requests." : "New accounts are created with the User role and can sign in immediately."),
               error && h("div", { className: "error" }, error),
-              h("button", { className: "btn primary", onClick: login, disabled: busy }, busy ? "Please wait..." : "Continue with Identity Provider")
+              message && h("div", { className: "notice" }, message),
+              authMode === "signin" && h("button", { className: "btn primary", onClick: login, disabled: busy }, busy ? "Please wait..." : "Continue with Identity Provider"),
+              authMode === "register" && h("form", { className: "form auth-form", onSubmit: register },
+                h("label", null, "Username", h("input", { name: "username", placeholder: "new.user", required: true })),
+                h("label", null, "Email", h("input", { name: "email", type: "email", placeholder: "user@example.com", required: true })),
+                h("label", null, "Full name", h("input", { name: "fullName", placeholder: "New User" })),
+                h("label", null, "Password", h("input", { name: "password", type: "password", placeholder: "At least 6 characters", required: true, minLength: 6 })),
+                h("button", { className: "btn primary", disabled: busy }, busy ? "Creating..." : "Create account")
+              )
             )
           )
         );
@@ -601,6 +693,8 @@ PAGE = Template(
               )
             ),
             filteredCars.length ? h("div", { className: "grid" }, filteredCars.map(function (car) {
+              const days = rentalDays(dateFrom, dateTo);
+              const total = days ? car.price * days : 0;
               return h("article", { className: "card car-card", key: car.carUid },
                 h("div", { className: "card-head" },
                   h("div", null,
@@ -615,7 +709,11 @@ PAGE = Template(
                 ),
                 h("div", { className: "row" },
                   h("span", { className: "price" }, money(car.price) + " / day"),
-                  h("button", { className: "btn primary", disabled: busy || !car.availability, onClick: function () { rent(car); } }, "Rent")
+                  h("button", { className: "btn primary", disabled: busy || !car.availability || !days, onClick: function () { rent(car); } }, "Book and pay")
+                ),
+                h("div", { className: "ticket" },
+                  h("strong", null, days ? money(total) : "Choose dates"),
+                  h("div", { className: "mini" }, days ? String(days) + " day booking, payment is created automatically" : "dateTo must be later than dateFrom")
                 )
               );
             })) : h("div", { className: "empty" }, "No cars match the selected filters.")
@@ -623,6 +721,7 @@ PAGE = Template(
           tab === "rentals" && h("section", null,
             rentals.length ? h("div", { className: "grid" }, rentals.map(function (rental) {
               const carName = rental.car ? rental.car.brand + " " + rental.car.model : rental.carUid;
+              const payment = rental.payment || {};
               return h("article", { className: "card", key: rental.rentalUid },
                 h("div", { className: "card-head" },
                   h("div", null,
@@ -630,6 +729,10 @@ PAGE = Template(
                     h("div", { className: "muted" }, rental.dateFrom + " - " + rental.dateTo)
                   ),
                   h("span", { className: statusClass(rental.status) }, rental.status)
+                ),
+                h("div", { className: "ticket" },
+                  h("strong", null, "Payment: " + (payment.status || "UNKNOWN")),
+                  h("div", { className: "mini" }, money(payment.price || 0) + " / " + (payment.paymentUid || "payment pending"))
                 ),
                 h("div", { className: "row", style: { marginTop: "18px" } },
                   h("button", { className: "btn", disabled: busy || rental.status !== "IN_PROGRESS", onClick: function () { finishRental(rental); } }, "Finish"),

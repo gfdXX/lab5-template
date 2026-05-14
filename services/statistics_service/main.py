@@ -57,6 +57,15 @@ app.add_middleware(
 )
 
 
+@app.middleware("http")
+async def log_requests(request, call_next):
+    start = time.time()
+    response = await call_next(request)
+    elapsed_ms = int((time.time() - start) * 1000)
+    print(f"statistics-service {request.method} {request.url.path} -> {response.status_code} ({elapsed_ms} ms)")
+    return response
+
+
 def get_db():
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()

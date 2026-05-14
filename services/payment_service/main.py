@@ -9,6 +9,7 @@ from typing import List, Optional
 import uuid
 from uuid import UUID
 import os
+import time
 from services.auth import AuthenticatedUser, get_current_user
 
 # Database setup
@@ -68,6 +69,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def log_requests(request, call_next):
+    start = time.time()
+    response = await call_next(request)
+    elapsed_ms = int((time.time() - start) * 1000)
+    print(f"payment-service {request.method} {request.url.path} -> {response.status_code} ({elapsed_ms} ms)")
+    return response
+
 
 # Dependency to get DB session
 def get_db():

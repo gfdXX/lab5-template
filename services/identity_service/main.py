@@ -72,6 +72,13 @@ class UserCreateRequest(BaseModel):
     fullName: Optional[str] = None
 
 
+class UserRegisterRequest(BaseModel):
+    username: str
+    email: str
+    password: str
+    fullName: Optional[str] = None
+
+
 class UserResponse(BaseModel):
     username: str
     email: str
@@ -87,6 +94,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def log_requests(request, call_next):
+    start = time.time()
+    response = await call_next(request)
+    elapsed_ms = int((time.time() - start) * 1000)
+    print(f"identity-service {request.method} {request.url.path} -> {response.status_code} ({elapsed_ms} ms)")
+    return response
 
 
 def get_db():
@@ -150,6 +166,33 @@ def ensure_admin_user(db: Session) -> None:
                 )
             )
             db.commit()
+
+
+def create_identity_user(payload: UserCreateRequest | UserRegisterRequest, db: Session) -> User:
+    username = payload.username.strip()
+    email = payload.email.strip().lower()
+    full_name = (payload.fullName or username).strip()
+
+    if not username or not email or not payload.password:
+        raise HTTPException(status_code=400, detail="Username, email and password are required")
+    if len(payload.password) < 6:
+        raise HTTPException(status_code=400, detail="Password must contain at least 6 characters")
+
+    exists = db.query(User).filter((User.username == username) | (User.email == email)).first()
+    if exists:
+        raise HTTPException(status_code=409, detail="User already exists")
+
+    new_user = User(
+        username=username,
+        email=email,
+        full_name=full_name,
+        password_hash=password_hash(payload.password),
+        role="User",
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    return new_user
 
 
 def normalize_scope(scope: Optional[str]) -> str:
@@ -340,6 +383,13 @@ async def token(
     }
 
 
+@app.post("/api/v1/register", response_model=UserResponse, status_code=201)
+async def register_user(payload: UserRegisterRequest, db: Session = Depends(get_db)):
+    """Public registration endpoint. New users always receive the User role."""
+    new_user = create_identity_user(payload, db)
+    return UserResponse(username=new_user.username, email=new_user.email, fullName=new_user.full_name, role=new_user.role)
+
+
 @app.get("/api/v1/users", response_model=list[UserResponse])
 async def list_users(user: AuthenticatedUser = Depends(get_current_user), db: Session = Depends(get_db)):
     require_role(user, "Admin")
@@ -356,19 +406,7 @@ async def create_user(
     db: Session = Depends(get_db),
 ):
     require_role(user, "Admin")
-    exists = db.query(User).filter((User.username == payload.username) | (User.email == payload.email)).first()
-    if exists:
-        raise HTTPException(status_code=409, detail="User already exists")
-    new_user = User(
-        username=payload.username,
-        email=payload.email,
-        full_name=payload.fullName or payload.username,
-        password_hash=password_hash(payload.password),
-        role="User",
-    )
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
+    new_user = create_identity_user(payload, db)
     return UserResponse(username=new_user.username, email=new_user.email, fullName=new_user.full_name, role=new_user.role)
 
 

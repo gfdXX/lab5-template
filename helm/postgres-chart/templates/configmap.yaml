@@ -63,7 +63,15 @@ data:
         ('509b42f3-198d-4c89-9276-a7520a7120ab', 'Kia', 'Carnival', 'М555ОР777', 249, 3900, 'MINIVAN', true),
         ('609b42f3-198d-4c89-9276-a7520a7120ab', 'Porsche', 'Boxster', 'Р911АС799', 300, 8500, 'ROADSTER', true),
         ('709b42f3-198d-4c89-9276-a7520a7120ab', 'Volvo', 'XC60', 'В060ЛЬ777', 249, 4700, 'SUV', true),
-        ('809b42f3-198d-4c89-9276-a7520a7120ab', 'Toyota', 'Camry', 'Т777ТТ777', 181, 3000, 'SEDAN', true)
+        ('809b42f3-198d-4c89-9276-a7520a7120ab', 'Toyota', 'Camry', 'Т777ТТ777', 181, 3000, 'SEDAN', true),
+        ('909b42f3-198d-4c89-9276-a7520a7120ab', 'Lexus', 'RX 350', 'Н909ХХ799', 300, 6200, 'SUV', true),
+        ('a09b42f3-198d-4c89-9276-a7520a7120ab', 'Hyundai', 'Solaris', 'С321АА777', 123, 2100, 'SEDAN', true),
+        ('b09b42f3-198d-4c89-9276-a7520a7120ab', 'Volkswagen', 'Multivan', 'О222ММ777', 204, 5600, 'MINIVAN', true),
+        ('c09b42f3-198d-4c89-9276-a7520a7120ab', 'Mazda', 'MX-5', 'К005МХ799', 184, 6400, 'ROADSTER', true),
+        ('d09b42f3-198d-4c89-9276-a7520a7120ab', 'Nissan', 'Qashqai', 'У456КЕ777', 144, 3300, 'SUV', true),
+        ('e09b42f3-198d-4c89-9276-a7520a7120ab', 'Skoda', 'Octavia', 'А777ОС799', 150, 2800, 'SEDAN', true),
+        ('f09b42f3-198d-4c89-9276-a7520a7120ab', 'Mercedes Benz', 'Vito', 'В333ТО777', 190, 5200, 'MINIVAN', true),
+        ('0a9b42f3-198d-4c89-9276-a7520a7120ab', 'Renault', 'Logan', 'Р010НР777', 102, 1800, 'SEDAN', true)
         ON CONFLICT (car_uid) DO UPDATE SET
             brand=EXCLUDED.brand,
             model=EXCLUDED.model,

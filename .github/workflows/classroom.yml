@@ -10,7 +10,7 @@ on:
 
 concurrency:
   group: classroom-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   NAMESPACE: test
@@ -105,12 +105,38 @@ jobs:
           kubectl config set-context --current --namespace="$NAMESPACE"
           kubectl cluster-info
 
+      - name: Unlock stale Helm releases
+        run: |
+          set -euo pipefail
+
+          unlock_release() {
+            local release="$1"
+            local status
+            status=$(helm status "$release" --namespace "$NAMESPACE" --output json 2>/dev/null | jq -r '.info.status // empty' || true)
+
+            if [[ "$status" != pending-* ]]; then
+              echo "${release}: status is ${status:-not-installed}, no unlock needed"
+              return 0
+            fi
+
+            echo "::warning::${release} is stuck in ${status}; deleting stale Helm pending revision secret"
+            kubectl get secrets -n "$NAMESPACE" -l "owner=helm,name=${release}" -o json \
+              | jq -r --arg status "$status" '.items[] | select(.metadata.labels.status == $status) | .metadata.name' \
+              | xargs -r kubectl delete secret -n "$NAMESPACE"
+          }
+
+          for release in postgres kafka identity-service cars-service payment-service rental-service statistics-service gateway-service ui-service; do
+            unlock_release "$release"
+          done
+
       - name: Deploy PostgreSQL
         run: |
           set -euo pipefail
           helm upgrade --install postgres ./helm/postgres-chart \
             --namespace "$NAMESPACE" \
             --wait \
+            --atomic \
+            --cleanup-on-fail \
             --timeout 10m
           kubectl rollout status deployment/postgres -n "$NAMESPACE" --timeout=5m
 
@@ -121,6 +147,8 @@ jobs:
             --namespace "$NAMESPACE" \
             -f ./helm/values/kafka.yaml \
             --wait \
+            --atomic \
+            --cleanup-on-fail \
             --timeout 10m
           kubectl rollout status deployment/kafka -n "$NAMESPACE" --timeout=5m
 
@@ -140,6 +168,8 @@ jobs:
               --set image.repository="${IMAGE_REPOSITORY_PREFIX}-${image_suffix}" \
               --set image.tag="$GITHUB_SHA" \
               --wait \
+              --atomic \
+              --cleanup-on-fail \
               --timeout 7m; then
               echo "::error::Helm deployment failed for ${release}"
               kubectl get deploy,pods,svc -n "$NAMESPACE" -l app.kubernetes.io/instance="$release" -o wide || true

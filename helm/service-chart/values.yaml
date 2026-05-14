@@ -3,6 +3,9 @@
 
 replicaCount: 1
 
+strategy:
+  type: Recreate
+
 image:
   repository: ""  # Will be set per service
   pullPolicy: Always

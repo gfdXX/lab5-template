@@ -55,6 +55,7 @@ services:
       OIDC_CLIENT_SECRET: car-rental-ui-secret
       OIDC_REDIRECT_URI: http://localhost:3000/callback
       OIDC_SIGNING_SECRET: rsoi-coursework-signing-secret
+      OIDC_JWKS: '{"keys":[{"kty":"oct","kid":"identity-hs256","alg":"HS256","use":"sig","k":"cnNvaS1jb3Vyc2V3b3JrLXNpZ25pbmctc2VjcmV0"}]}'
       ADMIN_USERNAME: admin
       ADMIN_EMAIL: admin@example.com
       ADMIN_PASSWORD: admin

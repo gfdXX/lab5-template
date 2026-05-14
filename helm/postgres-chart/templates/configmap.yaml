@@ -58,7 +58,12 @@ data:
         INSERT INTO cars (car_uid, brand, model, registration_number, power, price, type, availability) VALUES
         ('109b42f3-198d-4c89-9276-a7520a7120ab', 'Mercedes Benz', 'GLA 250', 'ЛО777Х799', 249, 3500, 'SEDAN', true),
         ('209b42f3-198d-4c89-9276-a7520a7120ab', 'BMW', 'X5', 'А123БВ777', 300, 5000, 'SUV', true),
-        ('309b42f3-198d-4c89-9276-a7520a7120ab', 'Audi', 'A4', 'В456ГД777', 200, 4000, 'SEDAN', true)
+        ('309b42f3-198d-4c89-9276-a7520a7120ab', 'Audi', 'A4', 'В456ГД777', 200, 4000, 'SEDAN', true),
+        ('409b42f3-198d-4c89-9276-a7520a7120ab', 'Tesla', 'Model 3', 'Е404КХ799', 283, 4200, 'SEDAN', true),
+        ('509b42f3-198d-4c89-9276-a7520a7120ab', 'Kia', 'Carnival', 'М555ОР777', 249, 3900, 'MINIVAN', true),
+        ('609b42f3-198d-4c89-9276-a7520a7120ab', 'Porsche', 'Boxster', 'Р911АС799', 300, 8500, 'ROADSTER', true),
+        ('709b42f3-198d-4c89-9276-a7520a7120ab', 'Volvo', 'XC60', 'В060ЛЬ777', 249, 4700, 'SUV', true),
+        ('809b42f3-198d-4c89-9276-a7520a7120ab', 'Toyota', 'Camry', 'Т777ТТ777', 181, 3000, 'SEDAN', true)
         ON CONFLICT (car_uid) DO UPDATE SET
             brand=EXCLUDED.brand,
             model=EXCLUDED.model,

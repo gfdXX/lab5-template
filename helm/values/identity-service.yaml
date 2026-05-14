@@ -23,6 +23,8 @@ env:
     value: "http://localhost:3000/callback"
   - name: OIDC_SIGNING_SECRET
     value: "rsoi-coursework-signing-secret"
+  - name: OIDC_JWKS
+    value: '{"keys":[{"kty":"oct","kid":"identity-hs256","alg":"HS256","use":"sig","k":"cnNvaS1jb3Vyc2V3b3JrLXNpZ25pbmctc2VjcmV0"}]}'
   - name: ADMIN_USERNAME
     value: "admin"
   - name: ADMIN_EMAIL

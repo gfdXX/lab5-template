@@ -400,6 +400,10 @@ PAGE = Template(
       return labels[status] || status || "Неизвестно";
     }
 
+    function carIsAvailable(car) {
+      return car.available !== undefined ? Boolean(car.available) : Boolean(car.availability);
+    }
+
     function App() {
       const [token, setToken] = React.useState(tokenStore.get());
       const [tab, setTab] = React.useState("cars");
@@ -544,7 +548,7 @@ PAGE = Template(
         try {
           const days = rentalDays(dateFrom, dateTo);
           if (!days) throw new Error("Выберите корректный период аренды.");
-          if (!car.availability) throw new Error("Этот автомобиль сейчас занят. Выберите доступный автомобиль.");
+          if (!carIsAvailable(car)) throw new Error("Этот автомобиль сейчас занят. Выберите доступный автомобиль.");
           const booking = await api("/api/v1/rental", {
             method: "POST",
             body: JSON.stringify({ carUid: car.carUid, dateFrom: dateFrom, dateTo: dateTo })
@@ -709,13 +713,14 @@ PAGE = Template(
             filteredCars.length ? h("div", { className: "grid" }, filteredCars.map(function (car) {
               const days = rentalDays(dateFrom, dateTo);
               const total = days ? car.price * days : 0;
+              const available = carIsAvailable(car);
               return h("article", { className: "card car-card", key: car.carUid },
                 h("div", { className: "card-head" },
                   h("div", null,
                     h("h3", null, car.brand + " " + car.model),
                     h("div", { className: "muted" }, car.registrationNumber)
                   ),
-                  h("span", { className: car.availability ? "pill good" : "pill warn" }, car.availability ? "Доступна" : "Занята")
+                  h("span", { className: available ? "pill good" : "pill warn" }, available ? "Доступна" : "Занята")
                 ),
                 h("div", { className: "meta" },
                   h("span", { className: "pill" }, car.type),
@@ -723,7 +728,7 @@ PAGE = Template(
                 ),
                 h("div", { className: "row" },
                   h("span", { className: "price" }, money(car.price) + " / день"),
-                  h("button", { className: "btn primary", disabled: busy || !car.availability || !days, onClick: function () { rent(car); } }, busy ? "Подождите..." : (!car.availability ? "Занята" : "Забронировать и оплатить"))
+                  h("button", { className: "btn primary", disabled: busy || !available || !days, onClick: function () { rent(car); } }, busy ? "Подождите..." : (!available ? "Занята" : "Забронировать и оплатить"))
                 ),
                 h("div", { className: "ticket" },
                   h("strong", null, days ? money(total) : "Выберите даты"),

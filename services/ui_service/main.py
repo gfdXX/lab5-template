@@ -25,7 +25,7 @@ async def log_requests(request, call_next):
 
 PAGE = Template(
     """<!doctype html>
-<html lang="en">
+<html lang="ru">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -271,8 +271,9 @@ PAGE = Template(
       border-radius: 8px;
       background: #fff;
     }
-    table { width: 100%; border-collapse: collapse; min-width: 660px; }
+    table { width: 100%; border-collapse: collapse; min-width: 1040px; }
     th, td { text-align: left; padding: 12px 14px; border-bottom: 1px solid #e7edf5; vertical-align: top; }
+    td { overflow-wrap: anywhere; }
     th { background: #f7f9fc; color: #43516a; font-size: 13px; }
     tr:last-child td { border-bottom: 0; }
     .login-page { min-height: 100vh; display: grid; grid-template-rows: auto 1fr; }
@@ -642,8 +643,7 @@ PAGE = Template(
           ),
           h("main", { className: "login-main" },
             h("section", { className: "login-copy" },
-              h("h2", null, "Бронируйте автомобили, управляйте арендой и смотрите статистику."),
-              h("p", null, "Приложение использует собственный провайдер идентификации. Администратор может создавать пользователей и просматривать отчет по событиям из Kafka.")
+              h("h2", null, "Бронируйте автомобили, управляйте арендой и смотрите статистику.")
             ),
             h("section", { className: "login-box" },
               h("div", { className: "auth-toggle" },
@@ -651,7 +651,7 @@ PAGE = Template(
                 h("button", { className: authMode === "register" ? "active" : "", onClick: function () { setAuthMode("register"); setError(""); setMessage(""); } }, "Регистрация")
               ),
               h("h3", null, authMode === "signin" ? "Безопасный вход" : "Создать аккаунт"),
-              h("p", null, authMode === "signin" ? "Войдите через провайдер идентификации, чтобы получить JWT для запросов к API." : "Новые аккаунты создаются с ролью Пользователь и могут сразу войти в систему."),
+              authMode === "register" && h("p", null, "Новые аккаунты создаются с ролью Пользователь и могут сразу войти в систему."),
               error && h("div", { className: "error" }, error),
               message && h("div", { className: "notice" }, message),
               authMode === "signin" && h("button", { className: "btn primary", onClick: login, disabled: busy }, busy ? "Подождите..." : "Войти через провайдер"),
@@ -802,11 +802,14 @@ PAGE = Template(
               h("div", { className: "section-title" }, h("h3", null, "Последние события")),
               h("div", { className: "table-wrap" },
                 h("table", null,
-                  h("thead", null, h("tr", null, ["Время", "Пользователь", "Действие", "Данные"].map(function (name) { return h("th", { key: name }, name); }))),
+                  h("thead", null, h("tr", null, ["Время", "Пользователь", "Метод", "URL", "Статус", "Действие", "Данные"].map(function (name) { return h("th", { key: name }, name); }))),
                   h("tbody", null, events.map(function (event) {
                     return h("tr", { key: event.id },
                       h("td", null, new Date(event.createdAt).toLocaleString()),
                       h("td", null, event.username),
+                      h("td", null, event.method || "-"),
+                      h("td", null, event.url || "-"),
+                      h("td", null, event.status || "-"),
                       h("td", null, event.action),
                       h("td", null, JSON.stringify(event.payload))
                     );

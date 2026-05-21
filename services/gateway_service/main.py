@@ -12,7 +12,6 @@ import os
 import time
 import threading
 import queue
-import psycopg2
 from enum import Enum
 from threading import Lock
 from services.auth import AuthenticatedUser, auth_header_for, get_current_user, get_settings, require_role
@@ -45,7 +44,6 @@ RENTAL_SERVICE_URL = os.getenv("RENTAL_SERVICE_URL", "http://rental-service:8060
 PAYMENT_SERVICE_URL = os.getenv("PAYMENT_SERVICE_URL", "http://payment-service:8050")
 IDENTITY_SERVICE_URL = os.getenv("IDENTITY_SERVICE_URL", "http://identity-service:8090")
 STATISTICS_SERVICE_URL = os.getenv("STATISTICS_SERVICE_URL", "http://statistics-service:8040")
-PAYMENT_DATABASE_URL = os.getenv("PAYMENT_DATABASE_URL", "postgresql://program:test@postgres:5432/payments")
 AUTH_SETTINGS = get_settings()
 
 # Ensure default audience is the configured issuer if audience is missing.
@@ -191,6 +189,8 @@ class CircuitBreaker:
 
 # Circuit breakers
 payment_circuit_breaker = CircuitBreaker(failure_threshold=3, timeout=30)
+payment_cache: dict[str, dict] = {}
+payment_cache_lock = Lock()
 
 
 class RetryQueue:
@@ -291,63 +291,38 @@ class RentalResponse(BaseModel):
 
 
 def force_cancel_payment(payment_uid: str) -> bool:
-    """Fallback: mark payment as cancelled directly in DB when payment service is unavailable."""
-    try:
-        conn = psycopg2.connect(PAYMENT_DATABASE_URL)
-        cursor = conn.cursor()
-        cursor.execute(
-            "UPDATE payment SET status = 'CANCELED' WHERE payment_uid = %s",
-            (str(payment_uid),)
-        )
-        conn.commit()
-        updated = cursor.rowcount > 0
-        cursor.close()
-        conn.close()
-        if updated:
-            print(f"Payment {payment_uid} status forcibly set to CANCELED in DB")
-        return updated
-    except Exception as e:
-        print(f"Force payment cancellation failed: {e}")
-        return False
+    """Fallback: mark cached payment as cancelled when payment service is unavailable."""
+    with payment_cache_lock:
+        payment = payment_cache.get(str(payment_uid))
+        if not payment:
+            return False
+        payment["status"] = "CANCELED"
+        payment_cache[str(payment_uid)] = payment
+    print(f"Payment {payment_uid} status set to CANCELED in gateway fallback cache")
+    return True
 
 
 def create_payment_local(price: int) -> dict:
-    """Fallback: create payment directly in DB when payment service is unavailable."""
-    try:
-        conn = psycopg2.connect(PAYMENT_DATABASE_URL)
-        cursor = conn.cursor()
-        payment_uid = uuid4()
-        cursor.execute(
-            "INSERT INTO payment (payment_uid, status, price) VALUES (%s, %s, %s)",
-            (str(payment_uid), "PAID", price),
-        )
-        conn.commit()
-        cursor.close()
-        conn.close()
-        return {"paymentUid": str(payment_uid), "status": "PAID", "price": price}
-    except Exception as e:
-        print(f"Local payment creation failed: {e}")
-        return {}
+    """Fallback: create payment in gateway memory when payment service is unavailable."""
+    payment = {"paymentUid": str(uuid4()), "status": "PAID", "price": price}
+    with payment_cache_lock:
+        payment_cache[payment["paymentUid"]] = payment
+    return payment
 
 
 def get_payment_local(payment_uid: str) -> dict:
-    """Fallback: fetch payment directly from DB when payment service is unavailable."""
-    try:
-        conn = psycopg2.connect(PAYMENT_DATABASE_URL)
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT payment_uid, status, price FROM payment WHERE payment_uid = %s",
-            (str(payment_uid),),
-        )
-        row = cursor.fetchone()
-        cursor.close()
-        conn.close()
-        if not row:
-            return {}
-        return {"paymentUid": str(row[0]), "status": row[1], "price": row[2]}
-    except Exception as e:
-        print(f"Local payment fetch failed: {e}")
-        return {}
+    """Fallback: fetch payment from gateway memory when payment service is unavailable."""
+    with payment_cache_lock:
+        payment = payment_cache.get(str(payment_uid))
+        return dict(payment) if payment else {}
+
+
+def remember_payment(payment: dict) -> dict:
+    """Remember payment data for degraded reads if payment-service is temporarily unavailable."""
+    if payment and payment.get("paymentUid"):
+        with payment_cache_lock:
+            payment_cache[str(payment["paymentUid"])] = dict(payment)
+    return payment
 
 @app.get("/manage/health")
 async def health_check():
@@ -427,7 +402,14 @@ async def register(payload: RegisterRequest):
         raise HTTPException(status_code=response.status_code, detail=detail)
 
     user_data = response.json()
-    publish_event("user_registered", user_data.get("username", payload.username), {"email": user_data.get("email")})
+    publish_event(
+        "user_registered",
+        user_data.get("username", payload.username),
+        {"email": user_data.get("email")},
+        method="POST",
+        url="/api/v1/register",
+        status=201,
+    )
     return user_data
 
 
@@ -551,7 +533,7 @@ async def get_rentals(
                         timeout=0.5
                     )
                     if payment_response.status_code == 200:
-                        item["payment"] = payment_response.json()
+                        item["payment"] = remember_payment(payment_response.json())
                 except (requests.RequestException, requests.Timeout):
                     pass
 
@@ -619,7 +601,7 @@ async def get_rental(rental_uid: str, user: AuthenticatedUser = Depends(get_curr
                     timeout=0.5
                 )
                 if payment_response.status_code == 200:
-                    rental_data["payment"] = payment_response.json()
+                    rental_data["payment"] = remember_payment(payment_response.json())
             except (requests.RequestException, requests.Timeout):
                 pass
 
@@ -740,14 +722,14 @@ async def create_rental(
             )
             if payment_response.status_code != 201:
                 raise requests.RequestException(f"Payment service returned {payment_response.status_code}")
-            return payment_response.json()
+            return remember_payment(payment_response.json())
         
         payment_info = {}
         try:
             payment_info = payment_circuit_breaker.call(_create_payment)
         except Exception as e:
             print(f"Gateway: Payment service error: {e}")
-            # Fallback: create payment directly in DB
+            # Fallback: create payment in gateway memory for degraded mode
             payment_info = create_payment_local(total_price)
             if not payment_info:
                 # Rollback car reservation
@@ -797,7 +779,14 @@ async def create_rental(
         
         rental_info = rental_response.json()
         
-        publish_event("rental_created", user.username, {"rentalUid": rental_info["rentalUid"], "carUid": rental_info["carUid"], "price": total_price})
+        publish_event(
+            "rental_created",
+            user.username,
+            {"rentalUid": rental_info["rentalUid"], "carUid": rental_info["carUid"], "price": total_price},
+            method="POST",
+            url="/api/v1/rental",
+            status=200,
+        )
 
         # Step 5: Return aggregated response
         return {
@@ -849,7 +838,14 @@ async def finish_rental(rental_uid: str, user: AuthenticatedUser = Depends(get_c
         )
         if finish_response.status_code == 204:
             from fastapi import Response
-            publish_event("rental_finished", user.username, {"rentalUid": rental_uid, "carUid": car_uid})
+            publish_event(
+                "rental_finished",
+                user.username,
+                {"rentalUid": rental_uid, "carUid": car_uid},
+                method="POST",
+                url=f"/api/v1/rental/{rental_uid}/finish",
+                status=204,
+            )
             return Response(status_code=204)
         elif finish_response.status_code == 404:
             raise HTTPException(status_code=404, detail="Rental not found")
@@ -904,7 +900,7 @@ async def cancel_rental(rental_uid: str, user: AuthenticatedUser = Depends(get_c
                 pass
             time.sleep(0.5)
         
-        # Cancel payment with retry + DB fallback
+        # Cancel payment with retry + local fallback
         payment_cancel_success = False
         start_time = time.time()
         while time.time() - start_time < timeout_seconds:
@@ -937,7 +933,14 @@ async def cancel_rental(rental_uid: str, user: AuthenticatedUser = Depends(get_c
             )
         
         from fastapi import Response
-        publish_event("rental_canceled", user.username, {"rentalUid": rental_uid, "carUid": car_uid, "paymentUid": payment_uid})
+        publish_event(
+            "rental_canceled",
+            user.username,
+            {"rentalUid": rental_uid, "carUid": car_uid, "paymentUid": payment_uid},
+            method="DELETE",
+            url=f"/api/v1/rental/{rental_uid}",
+            status=204,
+        )
         return Response(status_code=204)
     except requests.RequestException:
         raise HTTPException(status_code=503, detail="Rental service unavailable")
@@ -993,7 +996,16 @@ async def create_user(payload: dict, user: AuthenticatedUser = Depends(get_curre
     )
     if response.status_code >= 400:
         raise HTTPException(status_code=response.status_code, detail=response.text)
-    return response.json()
+    created_user = response.json()
+    publish_event(
+        "user_created_by_admin",
+        user.username,
+        {"username": created_user.get("username"), "email": created_user.get("email")},
+        method="POST",
+        url="/api/v1/users",
+        status=201,
+    )
+    return created_user
 
 if __name__ == "__main__":
     import uvicorn

@@ -2,7 +2,7 @@ import json
 import os
 import time
 from functools import lru_cache
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 
 @lru_cache()
@@ -24,7 +24,14 @@ def _producer():
         return None
 
 
-def publish_event(action: str, user: str, payload: Dict[str, Any]) -> None:
+def publish_event(
+    action: str,
+    user: str,
+    payload: Dict[str, Any],
+    method: Optional[str] = None,
+    url: Optional[str] = None,
+    status: Optional[int] = None,
+) -> None:
     producer = _producer()
     if not producer:
         return
@@ -32,6 +39,9 @@ def publish_event(action: str, user: str, payload: Dict[str, Any]) -> None:
         "action": action,
         "user": user,
         "payload": payload,
+        "method": method,
+        "url": url,
+        "status": status,
         "timestamp": int(time.time()),
     }
     try:

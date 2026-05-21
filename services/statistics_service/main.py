@@ -3,12 +3,12 @@ import os
 import threading
 import time
 from datetime import datetime
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from sqlalchemy import Column, DateTime, Integer, String, Text, create_engine, func
+from sqlalchemy import Column, DateTime, Integer, String, Text, create_engine, func, inspect, text
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
 from services.auth import AuthenticatedUser, get_current_user, require_role
@@ -29,6 +29,9 @@ class Event(Base):
     id = Column(Integer, primary_key=True, index=True)
     action = Column(String(80), nullable=False, index=True)
     username = Column(String(80), nullable=False, index=True)
+    method = Column(String(16), nullable=True)
+    url = Column(String(255), nullable=True)
+    status = Column(Integer, nullable=True)
     payload = Column(Text, nullable=False)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
@@ -43,6 +46,9 @@ class EventResponse(BaseModel):
     id: int
     action: str
     username: str
+    method: Optional[str] = None
+    url: Optional[str] = None
+    status: Optional[int] = None
     payload: dict
     createdAt: str
 
@@ -67,7 +73,7 @@ async def log_requests(request, call_next):
 
 
 def get_db():
-    Base.metadata.create_all(bind=engine)
+    ensure_schema()
     db = SessionLocal()
     try:
         yield db
@@ -75,14 +81,31 @@ def get_db():
         db.close()
 
 
+def ensure_schema() -> None:
+    Base.metadata.create_all(bind=engine)
+    existing = {column["name"] for column in inspect(engine).get_columns("stats_events")}
+    migrations = [
+        ("method", "ALTER TABLE stats_events ADD COLUMN method VARCHAR(16)"),
+        ("url", "ALTER TABLE stats_events ADD COLUMN url VARCHAR(255)"),
+        ("status", "ALTER TABLE stats_events ADD COLUMN status INTEGER"),
+    ]
+    with engine.begin() as connection:
+        for column, statement in migrations:
+            if column not in existing:
+                connection.execute(text(statement))
+
+
 def save_event(event: dict) -> None:
     db = SessionLocal()
     try:
-        Base.metadata.create_all(bind=engine)
+        ensure_schema()
         db.add(
             Event(
                 action=str(event.get("action", "unknown")),
                 username=str(event.get("user", "unknown")),
+                method=event.get("method"),
+                url=event.get("url"),
+                status=event.get("status"),
                 payload=json.dumps(event.get("payload", {})),
                 created_at=datetime.fromtimestamp(int(event.get("timestamp", time.time()))),
             )
@@ -120,7 +143,7 @@ def consume_events() -> None:
 
 @app.on_event("startup")
 def startup() -> None:
-    Base.metadata.create_all(bind=engine)
+    ensure_schema()
     threading.Thread(target=consume_events, daemon=True).start()
 
 
@@ -151,6 +174,9 @@ async def events(user: AuthenticatedUser = Depends(get_current_user), db: Sessio
             id=row.id,
             action=row.action,
             username=row.username,
+            method=row.method,
+            url=row.url,
+            status=row.status,
             payload=json.loads(row.payload),
             createdAt=row.created_at.isoformat(),
         )

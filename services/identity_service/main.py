@@ -248,14 +248,14 @@ def login_page(message: str = "", **values) -> str:
     </head>
     <body>
       <form method="post" action="/oauth/authorize">
-        <h1>Sign in</h1>
+        <h1>Вход</h1>
         {error}
         {hidden}
-        <label>Username</label>
+        <label>Логин</label>
         <input name="username" autocomplete="username" required>
-        <label>Password</label>
+        <label>Пароль</label>
         <input name="password" type="password" autocomplete="current-password" required>
-        <button type="submit">Continue</button>
+        <button type="submit">Продолжить</button>
       </form>
     </body>
     </html>

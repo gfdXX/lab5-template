@@ -157,3 +157,55 @@ def test_create_rental_through_gateway():
         assert data["payment"]["status"] == "PAID"
         assert data["payment"]["price"] == 14000
 
+
+def test_canceled_rental_overrides_cached_paid_payment():
+    """Canceled rentals must not expose a stale PAID payment from gateway cache."""
+    rental_uid = str(uuid.uuid4())
+    payment_uid = str(uuid.uuid4())
+    car_uid = "109b42f3-198d-4c89-9276-a7520a7120ab"
+    rental_response_data = {
+        "rentalUid": rental_uid,
+        "status": "CANCELED",
+        "dateFrom": "2024-01-01",
+        "dateTo": "2024-01-05",
+        "carUid": car_uid,
+        "paymentUid": payment_uid,
+    }
+    car_response_data = {
+        "carUid": car_uid,
+        "brand": "Mercedes Benz",
+        "model": "GLA 250",
+        "registrationNumber": "ЛО777Х799",
+    }
+    cached_payment = {
+        "paymentUid": payment_uid,
+        "status": "PAID",
+        "price": 14000,
+    }
+
+    with patch("services.gateway_service.main.get_payment_local", return_value=cached_payment), \
+         patch("services.gateway_service.main.requests.get") as mock_get:
+        rental_response = MagicMock()
+        rental_response.status_code = 200
+        rental_response.json.return_value = rental_response_data
+        car_response = MagicMock()
+        car_response.status_code = 200
+        car_response.json.return_value = car_response_data
+
+        def mock_get_side_effect(*args, **kwargs):
+            url = args[0] if args else kwargs.get("url", "")
+            if "rental" in url:
+                return rental_response
+            if "cars" in url:
+                return car_response
+            return MagicMock(status_code=404)
+
+        mock_get.side_effect = mock_get_side_effect
+
+        response = client.get(f"/api/v1/rental/{rental_uid}", headers=auth_headers())
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "CANCELED"
+    assert response.json()["payment"]["status"] == "CANCELED"
+    assert response.json()["payment"]["price"] == 14000
+

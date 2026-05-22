@@ -324,6 +324,13 @@ def remember_payment(payment: dict) -> dict:
             payment_cache[str(payment["paymentUid"])] = dict(payment)
     return payment
 
+
+def sync_payment_status_with_rental(rental: dict) -> dict:
+    """Keep degraded payment reads consistent with the authoritative rental status."""
+    if rental.get("status") == "CANCELED" and rental.get("payment"):
+        rental["payment"]["status"] = "CANCELED"
+    return rental
+
 @app.get("/manage/health")
 async def health_check():
     return {"status": "OK"}
@@ -550,6 +557,7 @@ async def get_rentals(
                         item["payment"] = local_payment
                     else:
                         item["payment"]["price"] = 0
+            sync_payment_status_with_rental(item)
         
         return items
     except requests.RequestException:
@@ -618,6 +626,7 @@ async def get_rental(rental_uid: str, user: AuthenticatedUser = Depends(get_curr
                     rental_data["payment"] = local_payment
                 else:
                     rental_data["payment"]["price"] = 0
+        sync_payment_status_with_rental(rental_data)
         
         return rental_data
     except requests.RequestException:
@@ -912,6 +921,7 @@ async def cancel_rental(rental_uid: str, user: AuthenticatedUser = Depends(get_c
                 )
                 if payment_cancel_response.status_code in (200, 204):
                     payment_cancel_success = True
+                    force_cancel_payment(payment_uid)
                     break
             except requests.RequestException:
                 pass

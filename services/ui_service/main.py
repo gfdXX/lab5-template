@@ -328,6 +328,44 @@ PAGE = Template(
       line-height: 1.45;
     }
     .mini { font-size: 13px; color: var(--muted); }
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      display: grid;
+      place-items: center;
+      padding: 18px;
+      background: rgba(15, 23, 42, .54);
+    }
+    .modal {
+      width: min(460px, 100%);
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 24px 70px rgba(15, 23, 42, .28);
+      padding: 22px;
+    }
+    .modal h3 { margin: 0 0 14px; text-align: center; font-size: 22px; }
+    .modal-summary {
+      display: grid;
+      gap: 10px;
+      padding: 14px;
+      border: 1px solid #d9e0ea;
+      border-radius: 8px;
+      background: #f7f9fc;
+      margin-bottom: 14px;
+    }
+    .modal-row { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); }
+    .modal-row strong { color: var(--ink); text-align: right; }
+    .modal-total {
+      border-radius: 8px;
+      background: #e9f3ff;
+      color: #123c6b;
+      padding: 12px 14px;
+      font-weight: 800;
+      margin-bottom: 16px;
+    }
+    .modal-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     @media (max-width: 760px) {
       .topbar-inner { padding: 14px 16px; align-items: flex-start; }
       .intro { grid-template-columns: 1fr; align-items: start; }
@@ -335,6 +373,7 @@ PAGE = Template(
       .login-main { grid-template-columns: 1fr; padding: 28px 16px; }
       .form { grid-template-columns: 1fr; }
       .account { justify-content: flex-start; }
+      .modal-actions { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -421,6 +460,7 @@ PAGE = Template(
       const [error, setError] = React.useState("");
       const [busy, setBusy] = React.useState(false);
       const [authMode, setAuthMode] = React.useState("signin");
+      const [bookingCar, setBookingCar] = React.useState(null);
 
       const claims = token ? decodeToken(token) : {};
       const roles = (claims.roles || []).map(function (role) { return String(role).toLowerCase(); });
@@ -542,6 +582,25 @@ PAGE = Template(
         }
       }
 
+      function openBooking(car) {
+        setError("");
+        setMessage("");
+        const days = rentalDays(dateFrom, dateTo);
+        if (!days) {
+          setError("Выберите корректный период аренды.");
+          return;
+        }
+        if (!carIsAvailable(car)) {
+          setError("Этот автомобиль сейчас занят. Выберите доступный автомобиль.");
+          return;
+        }
+        setBookingCar(car);
+      }
+
+      function closeBooking() {
+        if (!busy) setBookingCar(null);
+      }
+
       async function rent(car) {
         setBusy(true);
         setError("");
@@ -556,6 +615,7 @@ PAGE = Template(
           });
           const payment = booking.payment || {};
           setMessage("Бронирование оплачено: " + car.brand + " " + car.model + ", " + money(payment.price || car.price * days) + ". Статус платежа: " + statusText(payment.status || "PAID") + ".");
+          setBookingCar(null);
           await loadCars();
           await loadRentals();
         } catch (err) {
@@ -728,7 +788,7 @@ PAGE = Template(
                 ),
                 h("div", { className: "row" },
                   h("span", { className: "price" }, money(car.price) + " / день"),
-                  h("button", { className: "btn primary", disabled: busy || !available || !days, onClick: function () { rent(car); } }, busy ? "Подождите..." : (!available ? "Занята" : "Забронировать и оплатить"))
+                  h("button", { className: "btn primary", disabled: busy || !available || !days, onClick: function () { openBooking(car); } }, busy ? "Подождите..." : (!available ? "Занята" : "Забронировать и оплатить"))
                 ),
                 h("div", { className: "ticket" },
                   h("strong", null, days ? money(total) : "Выберите даты"),
@@ -816,6 +876,22 @@ PAGE = Template(
                   }))
                 )
               )
+            )
+          )
+        ),
+        bookingCar && h("div", { className: "modal-backdrop", role: "presentation", onClick: closeBooking },
+          h("div", { className: "modal", role: "dialog", "aria-modal": "true", "aria-label": "Подтверждение бронирования", onClick: function (ev) { ev.stopPropagation(); } },
+            h("h3", null, "Покупка бронирования"),
+            h("div", { className: "modal-summary" },
+              h("div", { className: "modal-row" }, h("span", null, "Автомобиль"), h("strong", null, bookingCar.brand + " " + bookingCar.model)),
+              h("div", { className: "modal-row" }, h("span", null, "Номер"), h("strong", null, bookingCar.registrationNumber)),
+              h("div", { className: "modal-row" }, h("span", null, "Период"), h("strong", null, dateFrom + " - " + dateTo)),
+              h("div", { className: "modal-row" }, h("span", null, "Дней"), h("strong", null, String(rentalDays(dateFrom, dateTo))))
+            ),
+            h("div", { className: "modal-total" }, "К оплате: " + money((bookingCar.price || 0) * rentalDays(dateFrom, dateTo))),
+            h("div", { className: "modal-actions" },
+              h("button", { className: "btn primary", disabled: busy, onClick: function () { rent(bookingCar); } }, busy ? "Покупаем..." : "Купить"),
+              h("button", { className: "btn", disabled: busy, onClick: closeBooking }, "Закрыть")
             )
           )
         )

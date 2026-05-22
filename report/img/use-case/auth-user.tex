@@ -1,0 +1,35 @@
+\documentclass{article}
+\usepackage[T2A]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[russian]{babel}
+\usepackage[active,tightpage]{preview}
+\usepackage{tikz}
+\usetikzlibrary{positioning,shapes.geometric}
+\PreviewEnvironment{tikzpicture}
+\setlength\PreviewBorder{8pt}
+\pagestyle{empty}
+
+\begin{document}
+\begin{tikzpicture}[
+	actor/.style={draw, circle, minimum size=1.25cm, align=center, line width=0.7pt},
+	usecase/.style={draw, ellipse, minimum width=5.4cm, minimum height=1.15cm, align=center, line width=0.7pt},
+	line/.style={line width=0.7pt}
+]
+	\node[actor] (user) {Пользователь};
+	\node[usecase, right=2.9cm of user] (cars) {Искать и фильтровать\\автомобили};
+	\node[usecase, below=0.75cm of cars] (book) {Забронировать автомобиль\\на выбранные даты};
+	\node[usecase, below=0.75cm of book] (pay) {Оплатить бронирование};
+	\node[usecase, right=1.8cm of book] (rentals) {Просмотреть свои\\бронирования};
+	\node[usecase, above=0.75cm of rentals] (cancel) {Отменить бронирование};
+	\node[usecase, below=0.75cm of rentals] (finish) {Завершить аренду};
+	\node[usecase, below=0.75cm of pay] (logout) {Выйти из аккаунта};
+
+	\draw[line] (user) -- (cars);
+	\draw[line] (user) -- (book);
+	\draw[line] (user) -- (pay);
+	\draw[line] (user) -- (rentals);
+	\draw[line] (user) -- (cancel);
+	\draw[line] (user) -- (finish);
+	\draw[line] (user) -- (logout);
+\end{tikzpicture}
+\end{document}

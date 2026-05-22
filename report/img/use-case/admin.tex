@@ -1,0 +1,33 @@
+\documentclass{article}
+\usepackage[T2A]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[russian]{babel}
+\usepackage[active,tightpage]{preview}
+\usepackage{tikz}
+\usetikzlibrary{positioning,shapes.geometric}
+\PreviewEnvironment{tikzpicture}
+\setlength\PreviewBorder{8pt}
+\pagestyle{empty}
+
+\begin{document}
+\begin{tikzpicture}[
+	actor/.style={draw, circle, minimum size=1.25cm, align=center, line width=0.7pt},
+	usecase/.style={draw, ellipse, minimum width=5.6cm, minimum height=1.15cm, align=center, line width=0.7pt},
+	line/.style={line width=0.7pt}
+]
+	\node[actor] (admin) {Администратор};
+	\node[usecase, right=3.0cm of admin] (cars) {Использовать функции\\пользователя};
+	\node[usecase, below=0.75cm of cars] (users) {Просмотреть список\\пользователей};
+	\node[usecase, below=0.75cm of users] (create) {Создать пользователя\\с ролью User};
+	\node[usecase, right=1.9cm of users] (summary) {Просмотреть сводку\\статистики};
+	\node[usecase, below=0.75cm of summary] (events) {Просмотреть события:\\метод, URL, статус, данные};
+	\node[usecase, above=0.75cm of summary] (logout) {Выйти из аккаунта};
+
+	\draw[line] (admin) -- (cars);
+	\draw[line] (admin) -- (users);
+	\draw[line] (admin) -- (create);
+	\draw[line] (admin) -- (summary);
+	\draw[line] (admin) -- (events);
+	\draw[line] (admin) -- (logout);
+\end{tikzpicture}
+\end{document}

@@ -1,54 +1,41 @@
-# Лабораторная работа #5
+# РСОИ, ЛР5 и курсовая: система бронирования автомобилей с OAuth2
 
-![GitHub Classroom Workflow](../../workflows/GitHub%20Classroom%20Workflow/badge.svg?branch=master)
+![Python](https://img.shields.io/badge/Python-FastAPI-009688?logo=fastapi&logoColor=white)
+![OpenID Connect](https://img.shields.io/badge/OAuth2-OpenID_Connect_%2B_JWT-F78C40?logo=openid&logoColor=white)
+![Kafka](https://img.shields.io/badge/Kafka-events-231F20?logo=apachekafka&logoColor=white)
+![Kubernetes](https://img.shields.io/badge/Kubernetes-Helm-326CE5?logo=kubernetes&logoColor=white)
 
-## OAuth2 Authorization
+Лабораторная работа №5 и курсовая работа «Система бронирования автомобилей» по курсу «Распределённые системы обработки информации», МГТУ им. Н.Э. Баумана (2025–2026).
 
-### Формулировка
+> **Код решения — в ветке [`test`](https://github.com/gfdXX/lab5-template/tree/test).**
+> В `master` лежит исходный шаблон курса, условие ЛР5 — в [ASSIGNMENT.md](ASSIGNMENT.md).
+> Пояснительная записка к курсовой — [`report/pdf/report.pdf`](https://github.com/gfdXX/lab5-template/blob/test/report/pdf/report.pdf).
 
-На базе [Лабораторной работы #4](https://github.com/bmstu-rsoi/lab2-template) реализовать OAuth2 token-based
-авторизацию.
+## Что сделано
 
-* Для авторизации использовать OpenID Connect, в роли Identity Provider использовать стороннее решение.
-* На Identity Provider настроить
-  использование [Resource Owner Password flow](https://auth0.com/docs/authorization/flows/resource-owner-password-flow)
-  (в одном запросе передается `clientId`, `clientSecret`, `username`, `password`).
-* Все методы `/api/**` (кроме `/api/v1/authorize` и `/api/v1/callback`) на всех сервисах закрыть token-based
-  авторизацией.
-* В качестве токена использовать [JWT](https://jwt.io/introduction), для валидации токена
-  использовать [JWKs](https://auth0.com/docs/security/tokens/json-web-tokens/json-web-key-sets), _запрос к Identity
-  Provider делать не нужно_.
-* JWT токен пробрасывать между сервисами, при получении запроса валидацию токена так же реализовать через JWKs.
-* Убрать заголовок `X-User-Name` и получать пользователя из JWT-токена.
-* Если авторизация некорректная (отсутствие токена, ошибка валидации JWT токена, закончилось время жизни токена
-  (поле `exp` в payload)), то отдавать 401 ошибку.
-* В `scope` достаточно указывать `openid profile email`.
+Сервис аренды автомобилей из ЛР2–ЛР4 доведён до полноценной системы:
 
-### Требования
+| Сервис | Порт | Ответственность |
+|---|---|---|
+| Identity Provider | 8090 | собственный провайдер OpenID Connect: `/.well-known/openid-configuration`, JWKS, выдача токенов, регистрация и управление пользователями |
+| Gateway | 8080 | единая точка входа, проверка JWT, оркестрация запросов, отдача статистики |
+| Cars / Rental / Payment | 8070 / 8060 / 8050 | автомобили, аренды, оплаты |
+| Statistics | 8040 | принимает события из Kafka и строит сводку |
+| UI | 3000 | веб-интерфейс: поиск и бронирование машин, мои аренды, панель администратора со статистикой и пользователями |
 
-1. Для автоматических прогонов тестов в файле [autograding.json](.github/classroom/autograding.json)
-   и [classroom.yml](.github/workflows/classroom.yml) заменить `<variant>` на ваш вариант.
-1. Код хранить на Github, для сборки использовать Github Actions.
-1. Каждый сервис должен быть завернут в docker.
-1. В classroom.yml дописать шаги на сборку, прогон unit-тестов.
+- **Авторизация OAuth2**: Resource Owner Password flow (`/api/v1/authorize`) и Authorization Code с входом через страницу провайдера (`/api/v1/callback`), токены — JWT, сервисы валидируют их локально по JWKS, без запроса к провайдеру; токен пробрасывается между сервисами, все `/api/**` закрыты, кроме `authorize` и `callback`;
+- **роли**: пользователь и администратор, администратор создаётся при старте Identity Provider;
+- **события**: Gateway публикует события (регистрация пользователя, создание пользователя администратором, создание, завершение и отмена аренды) в топик Kafka `car-rental-events`, Statistics их агрегирует;
+- **деплой**: docker-compose локально, Helm-чарты для Kubernetes (как в [ЛР4](https://github.com/gfdXX/lab4-template)).
 
-### Пояснения
+## Запуск
 
-1. В роли Identity Provider можно использовать любое решение, вот несколько рабочих вариантов:
-    1. [Okta](https://developer.okta.com/docs/guides/)
-    2. [Auth0](https://auth0.com/developers)
-2. Для получения metadata для OpenID Connect можно
-   использовать [Well-Known URI](https://auth0.com/docs/security/tokens/json-web-tokens/locate-json-web-key-sets):
-   `https://[base-server-url]/.well-known/openid-configuration`.
-3. Из Well-Known metadata можно получить Issuer URI и JWKs URI.
-4. Для реализации OAuth2 можно использовать сторонние библиотеки.
+```bash
+git clone -b test https://github.com/gfdXX/lab5-template.git
+cd lab5-template
+docker compose up --build        # UI на http://localhost:3000, Gateway на http://localhost:8080
+```
 
-### Прием задания
+## Автор
 
-1. При получении задания у вас создается fork этого репозитория для вашего пользователя.
-2. После того как все тесты успешно завершатся, в Github Classroom на Dashboard будет отмечено успешное выполнение
-   тестов.
-
-### Варианты заданий
-
-Распределение вариантов заданий аналогично [ЛР #2](https://github.com/bmstu-rsoi/lab2-template).
+Салженикин Даниил, группа ИУ7-21М, МГТУ им. Н.Э. Баумана. Руководитель курсовой — Ступников А.А.

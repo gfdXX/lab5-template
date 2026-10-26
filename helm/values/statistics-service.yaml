@@ -1,0 +1,34 @@
+fullnameOverride: statistics-service
+
+image:
+  repository: ""
+  tag: "latest"
+  pullPolicy: Always
+
+service:
+  port: 8040
+
+env:
+  - name: DATABASE_URL
+    value: "postgresql://program:test@postgres:5432/statistics"
+  - name: KAFKA_BOOTSTRAP_SERVERS
+    value: "kafka:9092"
+  - name: STATS_TOPIC
+    value: "car-rental-events"
+  - name: OIDC_ISSUER
+    value: "http://localhost:8080"
+  - name: OIDC_AUDIENCE
+    value: "rsoi-lab5-ci"
+  - name: OIDC_JWKS_URL
+    value: "http://identity-service:8090/oauth/jwks"
+  - name: OIDC_SCOPE
+    value: "openid profile email"
+
+command:
+  - uvicorn
+  - services.statistics_service.main:app
+  - --host
+  - 0.0.0.0
+  - --port
+  - "8040"
+

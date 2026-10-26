@@ -1,0 +1,62 @@
+fullnameOverride: gateway-service
+
+image:
+  repository: ""  # Will be set in CI/CD
+  tag: "latest"
+  pullPolicy: Always
+
+service:
+  port: 8080
+
+env:
+  - name: CARS_SERVICE_URL
+    value: "http://cars-service:8070"
+  - name: RENTAL_SERVICE_URL
+    value: "http://rental-service:8060"
+  - name: PAYMENT_SERVICE_URL
+    value: "http://payment-service:8050"
+  - name: IDENTITY_SERVICE_URL
+    value: "http://identity-service:8090"
+  - name: STATISTICS_SERVICE_URL
+    value: "http://statistics-service:8040"
+  - name: KAFKA_BOOTSTRAP_SERVERS
+    value: "kafka:9092"
+  - name: STATS_TOPIC
+    value: "car-rental-events"
+  - name: OIDC_ISSUER
+    value: "http://localhost:8080"
+  - name: OIDC_AUDIENCE
+    value: "rsoi-lab5-ci"
+  - name: OIDC_CLIENT_ID
+    value: "rsoi-lab5-ci"
+  - name: OIDC_CLIENT_SECRET
+    value: "rsoi-lab5-ci-secret"
+  - name: OIDC_TOKEN_URL
+    value: "http://identity-service:8090/oauth/token"
+  - name: OIDC_JWKS_URL
+    value: "http://identity-service:8090/oauth/jwks"
+  - name: OIDC_SCOPE
+    value: "openid profile email"
+  - name: OIDC_REDIRECT_URI
+    value: "http://localhost:3000/callback"
+
+command:
+  - uvicorn
+  - services.gateway_service.main:app
+  - --host
+  - 0.0.0.0
+  - --port
+  - "8080"
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations: {}
+  hosts:
+    - host: ""
+      paths:
+        - path: /api
+          pathType: Prefix
+        - path: /manage
+          pathType: Prefix
+

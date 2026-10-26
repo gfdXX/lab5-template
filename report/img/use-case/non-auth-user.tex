@@ -1,0 +1,27 @@
+\documentclass{article}
+\usepackage[T2A]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[russian]{babel}
+\usepackage[active,tightpage]{preview}
+\usepackage{tikz}
+\usetikzlibrary{positioning,shapes.geometric}
+\PreviewEnvironment{tikzpicture}
+\setlength\PreviewBorder{8pt}
+\pagestyle{empty}
+
+\begin{document}
+\begin{tikzpicture}[
+	actor/.style={draw, circle, minimum size=1.25cm, align=center, line width=0.7pt},
+	usecase/.style={draw, ellipse, minimum width=5.1cm, minimum height=1.15cm, align=center, line width=0.7pt},
+	line/.style={line width=0.7pt}
+]
+	\node[actor] (guest) {Гость};
+	\node[usecase, right=2.8cm of guest] (open) {Открыть\\веб-интерфейс};
+	\node[usecase, below=0.75cm of open] (register) {Зарегистрироваться};
+	\node[usecase, below=0.75cm of register] (login) {Войти через провайдер\\идентификации};
+
+	\draw[line] (guest) -- (open);
+	\draw[line] (guest) -- (register);
+	\draw[line] (guest) -- (login);
+\end{tikzpicture}
+\end{document}

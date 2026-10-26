@@ -40,12 +40,12 @@
 							"urlencoded": [
 								{
 									"key": "grant_type",
-									"value": "password",
+									"value": "http://auth0.com/oauth/grant-type/password-realm",
 									"type": "text"
 								},
 								{
 									"key": "scope",
-									"value": "openid",
+									"value": "openid profile email",
 									"type": "text"
 								},
 								{
@@ -66,6 +66,16 @@
 								{
 									"key": "client_secret",
 									"value": "{{clientSecret}}",
+									"type": "text"
+								},
+								{
+									"key": "audience",
+									"value": "{{audience}}",
+									"type": "text"
+								},
+								{
+									"key": "realm",
+									"value": "Username-Password-Authentication",
 									"type": "text"
 								}
 							]
@@ -181,7 +191,12 @@
 							]
 						},
 						"method": "GET",
-						"header": [],
+						"header": [
+							{
+								"key": "X-User-Name",
+								"value": "{{username}}"
+							}
+						],
 						"url": {
 							"raw": "{{serviceUrl}}/api/v1/cars?page=1&size=10&showAll=false",
 							"host": [
@@ -230,12 +245,7 @@
 							"type": "noauth"
 						},
 						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
+						"header": [],
 						"body": {
 							"mode": "raw",
 							"raw": "{\n    \"carUid\": \"{{carUid}}\",\n    \"dateFrom\": \"2021-10-08\",\n    \"dateTo\": \"2021-10-11\"\n}"
@@ -308,6 +318,10 @@
 						},
 						"method": "POST",
 						"header": [
+							{
+								"key": "X-User-Name",
+								"value": "{{username}}"
+							},
 							{
 								"key": "Content-Type",
 								"value": "application/json"
@@ -430,7 +444,12 @@
 							]
 						},
 						"method": "GET",
-						"header": [],
+						"header": [
+							{
+								"key": "X-User-Name",
+								"value": "{{username}}"
+							}
+						],
 						"url": {
 							"raw": "{{serviceUrl}}/api/v1/rental/:rentalUid",
 							"host": [
@@ -544,7 +563,12 @@
 							]
 						},
 						"method": "GET",
-						"header": [],
+						"header": [
+							{
+								"key": "X-User-Name",
+								"value": "{{username}}"
+							}
+						],
 						"url": {
 							"raw": "{{serviceUrl}}/api/v1/rental",
 							"host": [
@@ -629,7 +653,12 @@
 							]
 						},
 						"method": "DELETE",
-						"header": [],
+						"header": [
+							{
+								"key": "X-User-Name",
+								"value": "{{username}}"
+							}
+						],
 						"url": {
 							"raw": "{{serviceUrl}}/api/v1/rental/:rentalUid",
 							"host": [
@@ -879,7 +908,12 @@
 							]
 						},
 						"method": "POST",
-						"header": [],
+						"header": [
+							{
+								"key": "X-User-Name",
+								"value": "{{username}}"
+							}
+						],
 						"url": {
 							"raw": "{{serviceUrl}}/api/v1/rental/:rentalUid/finish",
 							"host": [

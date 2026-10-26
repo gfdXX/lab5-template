@@ -1,0 +1,200 @@
+services:
+  postgres:
+    image: library/postgres:13
+    container_name: postgres
+    restart: on-failure
+    environment:
+      POSTGRES_USER: program
+      POSTGRES_PASSWORD: "test"
+      POSTGRES_DB: postgres
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  db-init:
+    image: library/postgres:13
+    container_name: db-init
+    depends_on:
+      - postgres
+    environment:
+      PGPASSWORD: "test"
+    volumes:
+      - ./postgres/init-databases.sh:/init-databases.sh
+    command: ["bash", "/init-databases.sh"]
+
+  kafka:
+    image: bitnamilegacy/kafka:3.7.0
+    container_name: kafka
+    restart: on-failure
+    environment:
+      KAFKA_ENABLE_KRAFT: "yes"
+      KAFKA_CFG_NODE_ID: "1"
+      KAFKA_CFG_PROCESS_ROLES: "broker,controller"
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: "1@localhost:9093"
+      KAFKA_CFG_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093"
+      KAFKA_CFG_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092"
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_KRAFT_CLUSTER_ID: "abcdefghijklmnopqrstuv"
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+    ports:
+      - "9092:9092"
+
+  identity-service:
+    build: .
+    container_name: identity-service
+    restart: on-failure
+    environment:
+      DATABASE_URL: postgresql://program:test@postgres:5432/identity
+      OIDC_ISSUER: http://localhost:8090
+      OIDC_AUDIENCE: car-rental-ui
+      OIDC_CLIENT_ID: car-rental-ui
+      OIDC_CLIENT_SECRET: car-rental-ui-secret
+      OIDC_REDIRECT_URI: http://localhost:3000/callback
+      OIDC_SIGNING_SECRET: rsoi-coursework-signing-secret
+      OIDC_JWKS: '{"keys":[{"kty":"oct","kid":"identity-hs256","alg":"HS256","use":"sig","k":"cnNvaS1jb3Vyc2V3b3JrLXNpZ25pbmctc2VjcmV0"}]}'
+      ADMIN_USERNAME: admin
+      ADMIN_EMAIL: admin@example.com
+      ADMIN_PASSWORD: admin
+      DEMO_USERNAME: salgikda@gmail.com
+      DEMO_EMAIL: salgikda@gmail.com
+      DEMO_PASSWORD: 6UwQQYX!djfqXSd
+    ports:
+      - "8090:8090"
+    depends_on:
+      - db-init
+    command: ["uvicorn", "services.identity_service.main:app", "--host", "0.0.0.0", "--port", "8090"]
+
+  cars-service:
+    build: .
+    container_name: cars-service
+    restart: on-failure
+    environment:
+      DATABASE_URL: postgresql://program:test@postgres:5432/cars
+      OIDC_ISSUER: http://localhost:8090
+      OIDC_AUDIENCE: car-rental-ui
+      OIDC_CLIENT_ID: car-rental-ui
+      OIDC_CLIENT_SECRET: car-rental-ui-secret
+      OIDC_TOKEN_URL: http://identity-service:8090/oauth/token
+      OIDC_JWKS_URL: http://identity-service:8090/oauth/jwks
+      OIDC_SCOPE: ${OIDC_SCOPE:-openid profile email}
+      OIDC_REDIRECT_URI: http://localhost:3000/callback
+    ports:
+      - "8070:8070"
+    depends_on:
+      - db-init
+    command: ["uvicorn", "services.cars_service.main:app", "--host", "0.0.0.0", "--port", "8070"]
+
+  rental-service:
+    build: .
+    container_name: rental-service
+    restart: on-failure
+    environment:
+      DATABASE_URL: postgresql://program:test@postgres:5432/rentals
+      OIDC_ISSUER: http://localhost:8090
+      OIDC_AUDIENCE: car-rental-ui
+      OIDC_CLIENT_ID: car-rental-ui
+      OIDC_CLIENT_SECRET: car-rental-ui-secret
+      OIDC_TOKEN_URL: http://identity-service:8090/oauth/token
+      OIDC_JWKS_URL: http://identity-service:8090/oauth/jwks
+      OIDC_SCOPE: ${OIDC_SCOPE:-openid profile email}
+      OIDC_REDIRECT_URI: http://localhost:3000/callback
+    ports:
+      - "8060:8060"
+    depends_on:
+      - db-init
+      - cars-service
+    command: ["uvicorn", "services.rental_service.main:app", "--host", "0.0.0.0", "--port", "8060"]
+
+  payment-service:
+    build: .
+    container_name: payment-service
+    restart: on-failure
+    environment:
+      DATABASE_URL: postgresql://program:test@postgres:5432/payments
+      OIDC_ISSUER: http://localhost:8090
+      OIDC_AUDIENCE: car-rental-ui
+      OIDC_CLIENT_ID: car-rental-ui
+      OIDC_CLIENT_SECRET: car-rental-ui-secret
+      OIDC_TOKEN_URL: http://identity-service:8090/oauth/token
+      OIDC_JWKS_URL: http://identity-service:8090/oauth/jwks
+      OIDC_SCOPE: ${OIDC_SCOPE:-openid profile email}
+      OIDC_REDIRECT_URI: http://localhost:3000/callback
+    ports:
+      - "8050:8050"
+    depends_on:
+      - db-init
+    command: ["uvicorn", "services.payment_service.main:app", "--host", "0.0.0.0", "--port", "8050"]
+
+  gateway-service:
+    build: .
+    container_name: gateway-service
+    restart: on-failure
+    environment:
+      CARS_SERVICE_URL: http://cars-service:8070
+      RENTAL_SERVICE_URL: http://rental-service:8060
+      PAYMENT_SERVICE_URL: http://payment-service:8050
+      IDENTITY_SERVICE_URL: http://identity-service:8090
+      STATISTICS_SERVICE_URL: http://statistics-service:8040
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      STATS_TOPIC: car-rental-events
+      OIDC_ISSUER: http://localhost:8090
+      OIDC_AUDIENCE: car-rental-ui
+      OIDC_CLIENT_ID: car-rental-ui
+      OIDC_CLIENT_SECRET: car-rental-ui-secret
+      OIDC_TOKEN_URL: http://identity-service:8090/oauth/token
+      OIDC_JWKS_URL: http://identity-service:8090/oauth/jwks
+      OIDC_SCOPE: ${OIDC_SCOPE:-openid profile email}
+      OIDC_REDIRECT_URI: http://localhost:3000/callback
+    ports:
+      - "8080:8080"
+    depends_on:
+      - cars-service
+      - rental-service
+      - payment-service
+      - identity-service
+      - kafka
+    command: ["uvicorn", "services.gateway_service.main:app", "--host", "0.0.0.0", "--port", "8080"]
+
+  statistics-service:
+    build: .
+    container_name: statistics-service
+    restart: on-failure
+    environment:
+      DATABASE_URL: postgresql://program:test@postgres:5432/statistics
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      STATS_TOPIC: car-rental-events
+      OIDC_ISSUER: http://localhost:8090
+      OIDC_AUDIENCE: car-rental-ui
+      OIDC_JWKS_URL: http://identity-service:8090/oauth/jwks
+      OIDC_SCOPE: openid profile email
+    ports:
+      - "8040:8040"
+    depends_on:
+      - db-init
+      - kafka
+      - identity-service
+    command: ["uvicorn", "services.statistics_service.main:app", "--host", "0.0.0.0", "--port", "8040"]
+
+  ui-service:
+    build: .
+    container_name: ui-service
+    restart: on-failure
+    environment:
+      UI_API_BASE_URL: http://localhost:8080
+      UI_IDENTITY_URL: http://localhost:8090
+      OIDC_CLIENT_ID: car-rental-ui
+      OIDC_REDIRECT_URI: http://localhost:3000/callback
+    ports:
+      - "3000:3000"
+    depends_on:
+      - gateway-service
+      - identity-service
+    command: ["uvicorn", "services.ui_service.main:app", "--host", "0.0.0.0", "--port", "3000"]
+
+volumes:
+  db-data:
+

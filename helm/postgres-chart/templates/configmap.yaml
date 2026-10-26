@@ -1,0 +1,123 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "postgres-chart.fullname" . }}-init-script
+  labels:
+    {{- include "postgres-chart.labels" . | nindent 4 }}
+data:
+  init-databases.sh: |
+    #!/bin/bash
+    set -e
+
+    echo "Starting database initialization..."
+
+    # Wait for PostgreSQL to be ready
+    until pg_isready -h {{ include "postgres-chart.fullname" . }} -p 5432 -U {{ .Values.postgres.user }}; do
+      echo "Waiting for PostgreSQL to be ready..."
+      sleep 2
+    done
+
+    echo "PostgreSQL is ready, creating databases..."
+
+    # Create databases (idempotent)
+    psql -v ON_ERROR_STOP=1 -h {{ include "postgres-chart.fullname" . }} -U {{ .Values.postgres.user }} -d {{ .Values.postgres.database }} <<-'EOSQL'
+        SELECT 'CREATE DATABASE cars' WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'cars')\gexec
+        SELECT 'CREATE DATABASE rentals' WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'rentals')\gexec
+        SELECT 'CREATE DATABASE payments' WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'payments')\gexec
+        SELECT 'CREATE DATABASE identity' WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'identity')\gexec
+        SELECT 'CREATE DATABASE statistics' WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'statistics')\gexec
+
+        GRANT ALL PRIVILEGES ON DATABASE cars TO {{ .Values.postgres.user }};
+        GRANT ALL PRIVILEGES ON DATABASE rentals TO {{ .Values.postgres.user }};
+        GRANT ALL PRIVILEGES ON DATABASE payments TO {{ .Values.postgres.user }};
+        GRANT ALL PRIVILEGES ON DATABASE identity TO {{ .Values.postgres.user }};
+        GRANT ALL PRIVILEGES ON DATABASE statistics TO {{ .Values.postgres.user }};
+    EOSQL
+
+    echo "Databases created successfully"
+
+    # Create cars schema and insert data (idempotent)
+    psql -v ON_ERROR_STOP=1 -h {{ include "postgres-chart.fullname" . }} -U {{ .Values.postgres.user }} -d cars <<-'EOSQL'
+        CREATE TABLE IF NOT EXISTS cars
+        (
+            id                  SERIAL PRIMARY KEY,
+            car_uid             uuid UNIQUE NOT NULL,
+            brand               VARCHAR(80) NOT NULL,
+            model               VARCHAR(80) NOT NULL,
+            registration_number VARCHAR(20) NOT NULL,
+            power               INT,
+            price               INT         NOT NULL,
+            type                VARCHAR(20)
+                CHECK (type IN ('SEDAN', 'SUV', 'MINIVAN', 'ROADSTER')),
+            availability        BOOLEAN     NOT NULL DEFAULT TRUE
+        );
+
+        GRANT USAGE, SELECT ON SEQUENCE cars_id_seq TO {{ .Values.postgres.user }};
+        GRANT ALL PRIVILEGES ON TABLE cars TO {{ .Values.postgres.user }};
+
+        INSERT INTO cars (car_uid, brand, model, registration_number, power, price, type, availability) VALUES
+        ('109b42f3-198d-4c89-9276-a7520a7120ab', 'Mercedes Benz', 'GLA 250', 'ЛО777Х799', 249, 3500, 'SEDAN', true),
+        ('209b42f3-198d-4c89-9276-a7520a7120ab', 'BMW', 'X5', 'А123БВ777', 300, 5000, 'SUV', true),
+        ('309b42f3-198d-4c89-9276-a7520a7120ab', 'Audi', 'A4', 'В456ГД777', 200, 4000, 'SEDAN', true),
+        ('409b42f3-198d-4c89-9276-a7520a7120ab', 'Tesla', 'Model 3', 'Е404КХ799', 283, 4200, 'SEDAN', true),
+        ('509b42f3-198d-4c89-9276-a7520a7120ab', 'Kia', 'Carnival', 'М555ОР777', 249, 3900, 'MINIVAN', true),
+        ('609b42f3-198d-4c89-9276-a7520a7120ab', 'Porsche', 'Boxster', 'Р911АС799', 300, 8500, 'ROADSTER', true),
+        ('709b42f3-198d-4c89-9276-a7520a7120ab', 'Volvo', 'XC60', 'В060ЛЬ777', 249, 4700, 'SUV', true),
+        ('809b42f3-198d-4c89-9276-a7520a7120ab', 'Toyota', 'Camry', 'Т777ТТ777', 181, 3000, 'SEDAN', true),
+        ('909b42f3-198d-4c89-9276-a7520a7120ab', 'Lexus', 'RX 350', 'Н909ХХ799', 300, 6200, 'SUV', true),
+        ('a09b42f3-198d-4c89-9276-a7520a7120ab', 'Hyundai', 'Solaris', 'С321АА777', 123, 2100, 'SEDAN', true),
+        ('b09b42f3-198d-4c89-9276-a7520a7120ab', 'Volkswagen', 'Multivan', 'О222ММ777', 204, 5600, 'MINIVAN', true),
+        ('c09b42f3-198d-4c89-9276-a7520a7120ab', 'Mazda', 'MX-5', 'К005МХ799', 184, 6400, 'ROADSTER', true),
+        ('d09b42f3-198d-4c89-9276-a7520a7120ab', 'Nissan', 'Qashqai', 'У456КЕ777', 144, 3300, 'SUV', true),
+        ('e09b42f3-198d-4c89-9276-a7520a7120ab', 'Skoda', 'Octavia', 'А777ОС799', 150, 2800, 'SEDAN', true),
+        ('f09b42f3-198d-4c89-9276-a7520a7120ab', 'Mercedes Benz', 'Vito', 'В333ТО777', 190, 5200, 'MINIVAN', true),
+        ('0a9b42f3-198d-4c89-9276-a7520a7120ab', 'Renault', 'Logan', 'Р010НР777', 102, 1800, 'SEDAN', true)
+        ON CONFLICT (car_uid) DO UPDATE SET
+            brand=EXCLUDED.brand,
+            model=EXCLUDED.model,
+            registration_number=EXCLUDED.registration_number,
+            power=EXCLUDED.power,
+            price=EXCLUDED.price,
+            type=EXCLUDED.type,
+            availability=EXCLUDED.availability;
+    EOSQL
+
+    echo "Cars schema and data created successfully"
+
+    # Create rentals schema (idempotent)
+    psql -v ON_ERROR_STOP=1 -h {{ include "postgres-chart.fullname" . }} -U {{ .Values.postgres.user }} -d rentals <<-'EOSQL'
+        CREATE TABLE IF NOT EXISTS rental
+        (
+            id          SERIAL PRIMARY KEY,
+            rental_uid  uuid UNIQUE NOT NULL,
+            username    VARCHAR(80) NOT NULL,
+            payment_uid uuid        NOT NULL,
+            car_uid     uuid        NOT NULL,
+            date_from   TIMESTAMP   NOT NULL,
+            date_to     TIMESTAMP   NOT NULL,
+            status      VARCHAR(20) NOT NULL DEFAULT 'IN_PROGRESS'
+        );
+
+        GRANT USAGE, SELECT ON SEQUENCE rental_id_seq TO {{ .Values.postgres.user }};
+        GRANT ALL PRIVILEGES ON TABLE rental TO {{ .Values.postgres.user }};
+    EOSQL
+
+    echo "Rentals schema created successfully"
+
+    # Create payments schema (idempotent)
+    psql -v ON_ERROR_STOP=1 -h {{ include "postgres-chart.fullname" . }} -U {{ .Values.postgres.user }} -d payments <<-'EOSQL'
+        CREATE TABLE IF NOT EXISTS payment
+        (
+            id          SERIAL PRIMARY KEY,
+            payment_uid uuid UNIQUE NOT NULL,
+            status      VARCHAR(20) NOT NULL,
+            price       INT         NOT NULL
+        );
+
+        GRANT USAGE, SELECT ON SEQUENCE payment_id_seq TO {{ .Values.postgres.user }};
+        GRANT ALL PRIVILEGES ON TABLE payment TO {{ .Values.postgres.user }};
+    EOSQL
+
+    echo "Payments schema created successfully"
+    echo "Database initialization completed!"
+

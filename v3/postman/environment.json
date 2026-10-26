@@ -1,35 +1,40 @@
 {
   "id": "acc90f86-88ad-444e-924e-6f48f6ee7711",
-  "name": "[rsoi][lab5] Flight Service",
+  "name": "[rsoi][lab5] Car Rental System",
   "values": [
     {
       "key": "serviceUrl",
-      "value": "",
+      "value": "http://localhost:8080",
       "enabled": true
     },
     {
       "key": "identityProviderUrl",
-      "value": "",
+      "value": "http://localhost:8080",
       "enabled": true
     },
     {
       "key": "username",
-      "value": "",
+      "value": "salgikda@gmail.com",
       "enabled": true
     },
     {
       "key": "password",
-      "value": "",
+      "value": "6UwQQYX!djfqXSd",
       "enabled": true
     },
     {
       "key": "clientId",
-      "value": "",
+      "value": "rsoi-lab5-ci",
       "enabled": true
     },
     {
       "key": "clientSecret",
-      "value": "",
+      "value": "rsoi-lab5-ci-secret",
+      "enabled": true
+    },
+    {
+      "key": "audience",
+      "value": "rsoi-lab5-ci",
       "enabled": true
     }
   ],

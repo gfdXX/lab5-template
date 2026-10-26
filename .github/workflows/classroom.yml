@@ -1,38 +1,331 @@
 name: GitHub Classroom Workflow
+
 on:
   push:
-    branches: [ master ]
+    branches:
+      - test
+  pull_request:
+    branches:
+      - test
+
+concurrency:
+  group: classroom-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  NAMESPACE: test
+  KUBECONFIG: ${{ github.workspace }}/kubeconfig
+  IMAGE_PREFIX: car-rental-service
+
 jobs:
-  build:
-    name: Autograding
+  unit-tests:
+    name: Unit Tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          fetch-depth: 0
+          python-version: "3.11"
+          cache: pip
 
-      - uses: docker/setup-buildx-action@v2
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
-      # TODO build, publish to docker hub, deploy to k8s
+      - name: Run unit tests
+        run: python -m pytest services/ -v
 
-      - name: Run API Tests
-        uses: matt-ball/newman-action@master
+  build-and-push:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    if: github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
         with:
-          collection: <variant>/postman/collection.json
-          environment: <variant>/postman/environment.json
-          delayRequest: 100
-          reporters: '[ "cli" ]'
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - uses: education/autograding@v1
-        id: autograder
-        continue-on-error: true
-
-      - name: Github auto grader mark
-        uses: Romanow/google-sheet-autograder-marker@v1.0
+      - name: Build and push image
+        uses: docker/build-push-action@v6
         with:
-          google_token: ${{secrets.GOOGLE_API_KEY}}
-          sheet_id: "1xkgjUX6Qmk7rdJG-QPOToav-HWWtthJjnShIKnw3oIY"
-          homework_number: 5
-          user_column: 'D'
-          column_offset: 'F'
-          mark: "'+"
+          context: .
+          push: true
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_PREFIX }}-cars:${{ github.sha }}
+            ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_PREFIX }}-cars:latest
+            ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_PREFIX }}-rental:${{ github.sha }}
+            ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_PREFIX }}-rental:latest
+            ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_PREFIX }}-payment:${{ github.sha }}
+            ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_PREFIX }}-payment:latest
+            ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_PREFIX }}-gateway:${{ github.sha }}
+            ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_PREFIX }}-gateway:latest
+            ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_PREFIX }}-identity:${{ github.sha }}
+            ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_PREFIX }}-identity:latest
+            ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_PREFIX }}-statistics:${{ github.sha }}
+            ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_PREFIX }}-statistics:latest
+            ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_PREFIX }}-ui:${{ github.sha }}
+            ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_PREFIX }}-ui:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to Kubernetes
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: github.event_name == 'push'
+    env:
+      IMAGE_REPOSITORY_PREFIX: ${{ secrets.DOCKER_USERNAME }}/car-rental-service
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: "3.14.4"
+
+      - name: Configure kubectl
+        run: |
+          set -euo pipefail
+          echo "${{ secrets.KUBECONFIG }}" | base64 -d > "$KUBECONFIG"
+          chmod 600 "$KUBECONFIG"
+          mkdir -p "$HOME/.kube"
+          cp "$KUBECONFIG" "$HOME/.kube/config"
+          chmod 600 "$HOME/.kube/config"
+          kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+          kubectl config set-context --current --namespace="$NAMESPACE"
+          kubectl cluster-info
+
+      - name: Unlock stale Helm releases
+        run: |
+          set -euo pipefail
+
+          unlock_release() {
+            local release="$1"
+            local status
+            status=$(helm status "$release" --namespace "$NAMESPACE" --output json 2>/dev/null | jq -r '.info.status // empty' || true)
+
+            if [[ "$status" != pending-* ]]; then
+              echo "${release}: status is ${status:-not-installed}, no unlock needed"
+              return 0
+            fi
+
+            echo "::warning::${release} is stuck in ${status}; deleting stale Helm pending revision secret"
+            kubectl get secrets -n "$NAMESPACE" -l "owner=helm,name=${release}" -o json \
+              | jq -r --arg status "$status" '.items[] | select(.metadata.labels.status == $status) | .metadata.name' \
+              | xargs -r kubectl delete secret -n "$NAMESPACE"
+          }
+
+          for release in postgres kafka identity-service cars-service payment-service rental-service statistics-service gateway-service ui-service; do
+            unlock_release "$release"
+          done
+
+      - name: Deploy PostgreSQL
+        run: |
+          set -euo pipefail
+          helm upgrade --install postgres ./helm/postgres-chart \
+            --namespace "$NAMESPACE" \
+            --wait \
+            --atomic \
+            --cleanup-on-fail \
+            --timeout 1m
+          kubectl rollout status deployment/postgres -n "$NAMESPACE" --timeout=1m
+
+      - name: Deploy Kafka
+        run: |
+          set -euo pipefail
+          helm upgrade --install kafka ./helm/service-chart \
+            --namespace "$NAMESPACE" \
+            -f ./helm/values/kafka.yaml \
+            --wait \
+            --atomic \
+            --cleanup-on-fail \
+            --timeout 1m
+          kubectl rollout status deployment/kafka -n "$NAMESPACE" --timeout=1m
+
+      - name: Deploy application services
+        run: |
+          set -euo pipefail
+
+          deploy_service() {
+            local release="$1"
+            local values_file="$2"
+            local image_suffix="$3"
+
+            echo "::group::Deploy ${release}"
+            if ! helm upgrade --install "$release" ./helm/service-chart \
+              --namespace "$NAMESPACE" \
+              -f "$values_file" \
+              --set image.repository="${IMAGE_REPOSITORY_PREFIX}-${image_suffix}" \
+              --set image.tag="$GITHUB_SHA" \
+              --wait \
+              --atomic \
+              --cleanup-on-fail \
+              --timeout 1m; then
+              echo "::error::Helm deployment failed for ${release}"
+              kubectl get deploy,pods,svc -n "$NAMESPACE" -l app.kubernetes.io/instance="$release" -o wide || true
+              kubectl describe deployment "$release" -n "$NAMESPACE" || true
+              kubectl describe pods -n "$NAMESPACE" -l app.kubernetes.io/instance="$release" || true
+              kubectl logs deployment/"$release" -n "$NAMESPACE" --tail=200 || true
+              echo "::endgroup::"
+              return 1
+            fi
+
+            kubectl rollout status deployment/"$release" -n "$NAMESPACE" --timeout=1m
+            echo "::endgroup::"
+          }
+
+          deploy_service identity-service ./helm/values/identity-service.yaml identity
+          deploy_service cars-service ./helm/values/cars-service.yaml cars
+          deploy_service payment-service ./helm/values/payment-service.yaml payment
+          deploy_service rental-service ./helm/values/rental-service.yaml rental
+          deploy_service statistics-service ./helm/values/statistics-service.yaml statistics
+          deploy_service gateway-service ./helm/values/gateway-service.yaml gateway
+          deploy_service ui-service ./helm/values/ui-service.yaml ui
+
+      - name: Start port-forward to gateway
+        run: |
+          set -euo pipefail
+          nohup kubectl port-forward -n "$NAMESPACE" service/gateway-service 8080:8080 > port-forward.log 2>&1 &
+          echo $! > port-forward.pid
+
+          for i in $(seq 1 60); do
+            if nc -z localhost 8080; then
+              echo "Port-forward is ready."
+              exit 0
+            fi
+            if ! kill -0 "$(cat port-forward.pid)" 2>/dev/null; then
+              echo "Port-forward process exited unexpectedly."
+              cat port-forward.log
+              exit 1
+            fi
+            sleep 1
+          done
+
+          echo "Port-forward did not become ready in time."
+          cat port-forward.log
+          exit 1
+
+      - name: Smoke-check gateway requires auth
+        run: |
+          set -euo pipefail
+          curl -fsS http://localhost:8080/manage/health
+
+          http_code=$(curl -sS -o /tmp/gw_noauth_body -w "%{http_code}" http://localhost:8080/api/v1/cars)
+          echo "Gateway /cars without auth returned HTTP ${http_code}"
+          if [ "$http_code" != "401" ]; then
+            echo "Expected 401 from gateway without Authorization header"
+            cat /tmp/gw_noauth_body
+            exit 1
+          fi
+
+      - name: Clean previous rentals via gateway
+        run: |
+          set -euo pipefail
+          client_id="rsoi-lab5-ci"
+          client_secret="rsoi-lab5-ci-secret"
+          username="salgikda@gmail.com"
+          password="6UwQQYX!djfqXSd"
+          car_uid="109b42f3-198d-4c89-9276-a7520a7120ab"
+
+          token=$(curl -fsS -X POST "http://localhost:8080/oauth/token" \
+            -H "content-type: application/x-www-form-urlencoded" \
+            --data-urlencode "grant_type=http://auth0.com/oauth/grant-type/password-realm" \
+            --data-urlencode "client_id=${client_id}" \
+            --data-urlencode "client_secret=${client_secret}" \
+            --data-urlencode "username=${username}" \
+            --data-urlencode "password=${password}" \
+            --data-urlencode "realm=Username-Password-Authentication" \
+            --data-urlencode "audience=${client_id}" \
+            --data-urlencode "scope=openid profile email" | jq -r '.access_token')
+
+          if [ -z "$token" ] || [ "$token" = "null" ]; then
+            echo "Failed to obtain access token for cleanup"
+            exit 1
+          fi
+
+          curl -fsS -X PATCH "http://localhost:8080/api/v1/cars/${car_uid}/availability?available=true" \
+            -H "Authorization: Bearer ${token}" > /dev/null || true
+
+          cars_all=$(curl -fsS -H "Authorization: Bearer ${token}" "http://localhost:8080/api/v1/cars?page=1&size=20&showAll=true")
+          echo "$cars_all" | jq .
+          if ! echo "$cars_all" | jq -e --arg uid "$car_uid" '.items[]?|select(.carUid==$uid)' >/dev/null; then
+            echo "Car ${car_uid} not found in cars list"
+            exit 1
+          fi
+
+          cars_available=$(curl -fsS -H "Authorization: Bearer ${token}" "http://localhost:8080/api/v1/cars?page=1&size=20&showAll=false")
+          echo "$cars_available" | jq .
+          if ! echo "$cars_available" | jq -e --arg uid "$car_uid" '.items[]?|select(.carUid==$uid)' >/dev/null; then
+            echo "Car ${car_uid} is not marked available after reset"
+            exit 1
+          fi
+
+          rentals=$(curl -fsS -H "Authorization: Bearer ${token}" "http://localhost:8080/api/v1/rental" || echo "[]")
+          ids=$(echo "$rentals" | jq -r '
+            def rentals_array:
+              if type == "array" then .
+              elif type == "object" and has("items") then .items
+              else []
+              end;
+            rentals_array
+            | map(select(.status != "CANCELED") | .rentalUid)
+            | .[]?')
+
+          if [ -z "$ids" ]; then
+            echo "No active rentals found"
+          else
+            for id in $ids; do
+              echo "Cancelling leftover rental ${id} via gateway"
+              curl -fsS -o /dev/null -X DELETE \
+                -H "Authorization: Bearer ${token}" \
+                "http://localhost:8080/api/v1/rental/${id}" || true
+            done
+          fi
+
+      - name: Autograding
+        uses: education/autograding@v1
+        env:
+          KUBECONFIG: ${{ github.workspace }}/kubeconfig
+          NAMESPACE: test
+          DEPLOYMENT_NAME: payment-service
+          VARIANT: v3
+
+      - name: Stop port-forward
+        if: always()
+        run: |
+          if [ -f port-forward.pid ]; then
+            kill "$(cat port-forward.pid)" >/dev/null 2>&1 || true
+            rm -f port-forward.pid
+          fi
+          if [ -f port-forward.log ]; then
+            echo "Port-forward log:"
+            cat port-forward.log
+            rm -f port-forward.log
+          fi
+
+      - name: Collect Kubernetes diagnostics on failure
+        if: failure()
+        run: |
+          set +e
+          kubectl get all,ingress -n "$NAMESPACE" -o wide
+          for deployment in postgres kafka identity-service cars-service payment-service rental-service statistics-service gateway-service ui-service; do
+            echo "::group::${deployment}"
+            kubectl describe deployment "$deployment" -n "$NAMESPACE"
+            kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/instance="$deployment" -o wide
+            kubectl describe pods -n "$NAMESPACE" -l app.kubernetes.io/instance="$deployment"
+            kubectl logs deployment/"$deployment" -n "$NAMESPACE" --tail=200
+            echo "::endgroup::"
+          done

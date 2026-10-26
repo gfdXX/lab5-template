@@ -1,0 +1,26 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: debug-postgres-init
+  namespace: test
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: db-init
+        image: library/postgres:13
+        command: ["bash","-c","/init-databases.sh"]
+        env:
+        - name: PGPASSWORD
+          value: "test"
+        volumeMounts:
+        - name: init-script
+          mountPath: /init-databases.sh
+          subPath: init-databases.sh
+      volumes:
+      - name: init-script
+        configMap:
+          name: postgres-init-script
+          defaultMode: 0755

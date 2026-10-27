@@ -5,10 +5,10 @@
 ![Kafka](https://img.shields.io/badge/Kafka-events-231F20?logo=apachekafka&logoColor=white)
 ![Kubernetes](https://img.shields.io/badge/Kubernetes-Helm-326CE5?logo=kubernetes&logoColor=white)
 
-Лабораторная работа №5 и курсовая работа «Система бронирования автомобилей» по курсу «Распределённые системы обработки информации», МГТУ им. Н.Э. Баумана (2025–2026).
+Лабораторная работа №5 и курсовая работа «Разработка прототипа системы бронирования автомобилей на выбранные даты на базе веб-интерфейса» по курсу «Распределённые системы обработки информации», МГТУ им. Н.Э. Баумана (2025–2026).
 
 - Условие ЛР5 — в [ASSIGNMENT.md](ASSIGNMENT.md).
-- Пояснительная записка к курсовой — [report/pdf/report.pdf](report/pdf/report.pdf).
+- Задание на курсовую — [report/pdf/assignment.pdf](report/pdf/assignment.pdf), пояснительная записка — [report/pdf/report.pdf](report/pdf/report.pdf).
 
 ## Что сделано
 
